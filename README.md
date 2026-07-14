@@ -76,3 +76,10 @@ catch
 - Team assignment should achieve: 95% > accuracy
 - viewer frame rate should be at least 30 FPS
 - Video processing jobs shall be independently executable by workers.
+
+
+## High Level Design
+
+This whole pipeline can be seen as a bunch of subcomponents that are combined together to gain all the nesscary info to recreate the scene. We will combine multiple Computer Vision techniques and models to solve these subproblems.
+
+![High Level Diagram](high_level_diagram.png)
