@@ -73,7 +73,9 @@ SAM 2 is the main frame-to-frame tracker. Its inference state and memory bank
 carry information from earlier frames to propagate each object's mask. The
 application does not manage this memory directly.
 
-A propagated mask is cleaned before use. Mask processing removes small
+How the memory bank works at a high level is that it will store visual and mask features for a specific object. SAM 2 then uses **spatial cross-attention** to retrieve relevant information from previous object memories to locate the object in the next frame.
+
+Mask is cleaned before use such as small
 disconnected regions and derives the current bounding box, centroid, mask area,
 and bottom-center footpoint.
 
