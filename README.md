@@ -411,7 +411,7 @@ data contract is stable.
 
 ## Low Level Design
 
-- Video ingestion and frame extraction
+- [Player tracking](TRACKING.md)
 - Player detector interface
 - Tracker and segmentation interface
 - Team assignment pipeline
