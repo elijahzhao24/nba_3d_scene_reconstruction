@@ -58,6 +58,13 @@ The RF-DETR adapter detects on-court players in a frame. It filters by class and
 confidence, clips boxes to image bounds, and converts model output into
 `PlayerDetection` records.
 
+The adapter loads the fine-tuned model directly into the Python worker with
+Roboflow Inference's `get_model`. A worker creates one
+`RoboflowPlayerDetector` and reuses it for every detector checkpoint. The first
+construction downloads and caches the model weights; later runs reuse the
+cache. Video workers should pass their in-memory OpenCV frame to `detect` to
+avoid an unnecessary encode/HTTP/decode cycle.
+
 RF-DETR does not assign or preserve track IDs. Running it periodically instead
 of every frame reduces compute while still discovering entering players and
 checking SAM 2 tracks. 
@@ -151,7 +158,24 @@ RF-DETR or SAM 2.
 
 ## Configuration
 
-- RF-DETR confidence threshold and checkpoint interval;
+- `ROBOFLOW_MODEL_ID`: fine-tuned RF-DETR deployment model ID;
+- `ROBOFLOW_API_KEY`: private key used to download the model weights;
+- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.4`;
+- RF-DETR checkpoint interval, initially every five frames;
 - association score threshold and weights;
 - maximum missing frames;
 - minimum and maximum valid mask area.
+
+Copy `.env.example` to `.env`, fill in the private API key, and load it into the
+worker environment. The native GPU runtime is an optional dependency so schema,
+artifact, and unit-test tooling does not require CUDA:
+
+```bash
+uv sync --python 3.11 --extra gpu
+uv run --extra gpu --env-file .env <worker-command>
+```
+
+The native `inference-gpu` installation compiles PyCUDA on Linux and therefore
+requires the CUDA Toolkit development files (`nvcc` and `cuda.h`), in addition
+to a working NVIDIA driver. Docker and NVIDIA Container Toolkit are not used by
+this direct `get_model` path. The `.env` file is ignored by Git.
