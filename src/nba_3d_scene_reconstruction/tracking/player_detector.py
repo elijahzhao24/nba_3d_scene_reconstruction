@@ -17,6 +17,7 @@ else:
 
 
 DEFAULT_CONFIDENCE_THRESHOLD = 0.4
+# Discard non player classes in our fine-tuned model
 PLAYER_CLASSES = frozenset(
     {
         "player",
@@ -27,7 +28,7 @@ PLAYER_CLASSES = frozenset(
     }
 )
 
-
+# expected shape from roboflow
 class _Prediction(Protocol):
     x: float
     y: float
