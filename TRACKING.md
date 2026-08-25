@@ -43,6 +43,26 @@ RF-DETR runs on the first frame and periodically afterward, initially every
 five frames. SAM 2 propagates existing tracks on every frame between those
 detector checkpoints.
 
+#### Frame Zero
+
+- RF-DETR detects every visible player
+- Track manager creats an ID for each detection
+- Every ID and box is sent to SAM2 for it to create initial player masks
+
+#### Noraml Frames
+
+- SAM 2 propagates every known player mask
+    - Using the player's earlier mask, object ID, and stored visual features in it's temporal memory bank, It updates and predicts same player's mask on the current frame
+- Nonempty masks are considered visible, empty/missing masks increase the track's missing count in the track_manager
+
+#### RF-DETR checkpoints (every 5th frame for now)
+
+- RF-DETR generates fresh boxes
+- SAM 2 has current masks with track IDs
+- Association engine matches boxes to masks
+- Matched boxes correct existing SAM objects
+- unmatched npxes create new player IDs
+
 ## Components
 
 ### Video ingestion and frame extraction
