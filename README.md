@@ -7,7 +7,8 @@
 
 
 **Player tracking and unique identification (8/24):**
-[![Player tracking demo](docs/assets/player_tracking_demo_preview.jpg)](docs/assets/player_tracking_demo.webm)
+
+https://github.com/user-attachments/assets/a7482237-7b0e-4695-8338-80ef4f4b170a
 
 **Keypoint detection + Homography (WIP)**
 
