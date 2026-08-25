@@ -60,6 +60,7 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
                 0: (detection(0, (10, 20, 30, 60)),),
                 2: (
                     detection(2, (10, 20, 30, 60)),
+                    detection(2, (10.2, 20.2, 30.2, 60.2)),
                     detection(2, (60, 20, 80, 60)),
                 ),
             }

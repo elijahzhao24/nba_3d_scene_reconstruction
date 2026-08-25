@@ -92,7 +92,7 @@ class RoboflowPlayerDetectorTest(unittest.TestCase):
         model = FakeModel(())
         with patch.dict(
             os.environ,
-            {"RFDETR_CONFIDENCE_THRESHOLD": "0.65"},
+            {"RFDETR_CONFIDENCE_THRESHOLD": "0.67"},
             clear=True,
         ):
             detector = RoboflowPlayerDetector(

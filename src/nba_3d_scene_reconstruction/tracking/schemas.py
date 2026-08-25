@@ -78,6 +78,7 @@ class AssociationResult:
     matches: tuple[AssociationMatch, ...] = ()
     unmatched_detection_indices: tuple[int, ...] = ()
     unmatched_track_ids: tuple[int, ...] = ()
+    ignored_duplicate_detection_indices: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)

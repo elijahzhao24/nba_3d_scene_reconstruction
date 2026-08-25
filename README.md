@@ -1,5 +1,20 @@
 # nba_3d_scene_reconstruction
 
+#### Demos:
+
+**Requirements + HLD design + low Level design (below in the README)**:
+![High Level Diagram](high_level_diagram.png)
+
+
+**Player tracking and unique identification (8/24):**
+[![Player tracking demo](docs/assets/player_tracking_demo_preview.jpg)](docs/assets/player_tracking_demo.webm)
+
+**Keypoint detection + Homography (WIP)**
+
+**Pose estimation + Lifing (WIP)**
+
+**Visalize to Three.js (WIP)**
+
 ## Summary
 
 The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.

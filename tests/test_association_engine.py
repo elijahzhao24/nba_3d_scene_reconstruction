@@ -81,6 +81,21 @@ class PlayerAssociationEngineTest(unittest.TestCase):
         self.assertEqual(result.matches[0].detection_index, 0)
         self.assertEqual(result.matches[0].track_id, 7)
         self.assertEqual(result.unmatched_detection_indices, (1,))
+        self.assertEqual(result.ignored_duplicate_detection_indices, ())
+
+    def test_ignores_unmatched_detection_overlapping_a_matched_one(self) -> None:
+        result = self.engine.associate(
+            detections=(
+                detection(5, (10, 20, 30, 60)),
+                detection(5, (10.2, 20.2, 30.2, 60.2)),
+            ),
+            sam_masks=(sam_mask(5, 7, (10, 20, 30, 60)),),
+        )
+
+        self.assertEqual(len(result.matches), 1)
+        self.assertEqual(result.matches[0].detection_index, 0)
+        self.assertEqual(result.unmatched_detection_indices, ())
+        self.assertEqual(result.ignored_duplicate_detection_indices, (1,))
 
     def test_empty_mask_is_unmatched(self) -> None:
         result = self.engine.associate(

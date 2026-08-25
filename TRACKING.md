@@ -180,7 +180,7 @@ RF-DETR or SAM 2.
 
 - `ROBOFLOW_MODEL_ID`: fine-tuned RF-DETR deployment model ID;
 - `ROBOFLOW_API_KEY`: private key used to download the model weights;
-- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.4`;
+- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.67`;
 - RF-DETR checkpoint interval, initially every five frames;
 - association score threshold and weights;
 - maximum missing frames;
@@ -199,3 +199,20 @@ The native `inference-gpu` installation compiles PyCUDA on Linux and therefore
 requires the CUDA Toolkit development files (`nvcc` and `cuda.h`), in addition
 to a working NVIDIA driver. Docker and NVIDIA Container Toolkit are not used by
 this direct `get_model` path. The `.env` file is ignored by Git.
+
+## End-to-end overlay test
+
+The tracking demo ingests a video, runs RF-DETR and SAM 2, and writes a debug
+MP4 with colored player masks and track IDs. Start with a short slice so model
+or configuration problems surface quickly:
+
+```bash
+uv run --extra gpu --env-file .env \
+  tracking-demo path/to/clip.mp4 \
+  --max-frames 60
+```
+
+By default the result is written to
+`artifacts/<clip_id>/segment_001/debug/tracking_overlay.mp4`. Use
+`--output path/to/result.mp4` to choose another location. The first real run
+may download both model weights.

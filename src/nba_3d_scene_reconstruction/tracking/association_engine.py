@@ -19,6 +19,7 @@ class PlayerAssociationEngine:
     """Perform stateless, one-to-one matching at detector checkpoints."""
 
     MINIMUM_SCORE = 0.4
+    DUPLICATE_IOU_THRESHOLD = 0.95
     IOU_WEIGHT = 0.5
     CENTER_WEIGHT = 0.5
 
@@ -80,17 +81,36 @@ class PlayerAssociationEngine:
             matched_track_ids.add(candidate.track_id)
 
         matches.sort(key=lambda match: match.detection_index)
+        ignored_duplicate_detection_indices = tuple(
+            detection_index
+            for detection_index, detection in enumerate(detections)
+            if detection_index not in matched_detection_indices
+            and any(
+                self._calculate_iou(
+                    detection.bbox_xyxy,
+                    detections[match.detection_index].bbox_xyxy,
+                )
+                >= self.DUPLICATE_IOU_THRESHOLD
+                for match in matches
+            )
+        )
+        ignored_duplicate_indices = set(ignored_duplicate_detection_indices)
+
         return AssociationResult(
             matches=tuple(matches),
             unmatched_detection_indices=tuple(
                 index
                 for index in range(len(detections))
                 if index not in matched_detection_indices
+                and index not in ignored_duplicate_indices
             ),
             unmatched_track_ids=tuple(
                 sam_mask.track_id
                 for sam_mask in sam_masks
                 if sam_mask.track_id not in matched_track_ids
+            ),
+            ignored_duplicate_detection_indices=(
+                ignored_duplicate_detection_indices
             ),
         )
 
