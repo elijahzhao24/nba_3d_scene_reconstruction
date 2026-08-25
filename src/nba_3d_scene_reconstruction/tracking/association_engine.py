@@ -22,6 +22,10 @@ class PlayerAssociationEngine:
     IOU_WEIGHT = 0.5
     CENTER_WEIGHT = 0.5
 
+    '''
+    Matches new RF-DETR boxes to exisiting SAM IDS.
+    returns a list of matched and unmatched indices.
+    '''
     def associate(
         self,
         *,
