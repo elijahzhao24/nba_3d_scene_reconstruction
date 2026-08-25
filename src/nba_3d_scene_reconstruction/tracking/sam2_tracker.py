@@ -46,6 +46,8 @@ class Sam2PlayerTracker:
         self._state = self.predictor.init_state(os.fspath(frames_dir))
         self._track_ids.clear()
 
+    # Existing ID's added to a set has no effect.
+    # so prompt_player works for both addition and corrections
     def prompt_player(
         self,
         frame_idx: int,
