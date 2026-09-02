@@ -58,12 +58,6 @@ The detector returns one parent prediction with class `court`. Its 33 court
 landmarks are nested inside that prediction; they are not separate object
 detections.
 
-The reference notebook uses `basketball-court-detection-2/14`, while this
-project currently targets `/22`. The model ID, expected landmark labels, court
-geometry, and geometry-source revision must be pinned together. Before using a
-new model version, run one raw inference and verify its 33 landmark labels and
-order.
-
 The expected label order is:
 
 ```text
@@ -90,25 +84,17 @@ Its coordinate plane is 94 by 50 feet, with `x` running between baselines and
 
 For each checkpoint:
 
-1. Keep finite landmarks above the keypoint-confidence threshold.
+1. Remove landmarks below a confidence threshold
 2. Require at least four non-collinear correspondences; use at least six
    inliers for an accepted production calibration.
-3. Optionally update an exponential moving average for each landmark's image
-   position. A starting `alpha` of `0.25` favors stability; increase it if the
-   calibration lags camera pans.
-4. Fit `court_to_image` using `cv2.findHomography` with RANSAC or MAGSAC.
-5. Measure inlier reprojection error in image pixels.
-6. Validate the result, then invert it to obtain `image_to_court`.
+3. Optionally update an exponential moving average for each landmark's image position.
+4. Fit `court_to_image` using `cv2.findHomography` with RANSAC.
+5. Validate the result, then invert it to obtain `image_to_court` (to map player image pixel -> court positions).
 
-Estimate court-to-image first so the robust fitting threshold has the useful
-unit of pixels. Do not average the nine homography matrix entries directly: a
-homography is scale-ambiguous and element-wise smoothing can distort the
-projection.
+Estimate court-to-image first so the robust fitting threshold can use pixels.
 
-A calibration is accepted only if it has enough well-distributed inliers, is
-finite and invertible, preserves court orientation, and has low reprojection
-error. A failed checkpoint can reuse the last good calibration briefly. A
-broadcast cut resets all calibration state immediately.
+For RANSACE filtering, A calibration is accepted only if it has enough well-distributed inliers, is
+finite and invertible, and preserves court orientation. A failed checkpoint can reuse the last good calibration briefly. 
 
 Initial values to tune from debug footage:
 
@@ -138,9 +124,8 @@ point = np.array([[[u, v]]], dtype=np.float32)
 court_xy = cv2.perspectiveTransform(point, H)[0, 0]
 ```
 
-Reject non-finite results and positions outside the court plus a small margin.
-The homography maps only the floor plane: it must not be used as the 3D
-position of a head, hand, jumping player, or airborne ball.
+Reject positions outside the court plus a small margin.
+The homography maps only the floor plane, so it should not be used to predict the 3d position of something off the ground (head, hand, jumping player, basketball)
 
 If court coordinates are stored in feet, convert them to centered Three.js
 meters with:
@@ -166,8 +151,7 @@ Use two separate cleanup layers.
 - Hold the last good calibration across a short detection failure.
 - Reset landmark filters and homography state on a camera cut.
 
-This corrects movement shared by every projected player. If all players jump
-in the same direction on the same frame, calibration is the likely cause.
+This corrects movement shared by every projected player. 
 
 ### Per-player path cleanup
 
@@ -175,20 +159,20 @@ After projection, group positions by `track_id` and process each continuous
 track independently:
 
 1. Calculate frame-to-frame court speed.
-2. Detect "teleports" using a robust threshold such as median speed plus a
+2. Detect "teleports" using a threshold such as median speed plus a
    multiple of median absolute deviation.
-3. Mark short suspicious runs as missing and pad their boundaries slightly.
+3. Mark suspicious frames as 'missing'. Pad their boundries by removing a small number of neighboring frames as well.
 4. Linearly interpolate only short gaps with valid positions on both sides.
 5. Apply a light Savitzky-Golay filter independently to court `x` and `y`.
 
-The reference notebook uses starting values equivalent to a nine-frame,
-second-order Savitzky-Golay filter after jump removal. This is an offline
-centered filter and uses roughly four future frames. For live output, replace
-it with a causal EMA, One Euro filter, or Kalman filter.
+Default with a  nine-frame, second-order Savitzky-Golay filter after jump/suspicious frame removal. This is an offline
+centered filter and uses roughly four future frames. 
 
-Never smooth across camera cuts, retired/reassigned track IDs, or long missing
-intervals. Preserve both raw and cleaned positions so smoothing can be tuned
+Never smooth across retired/reassigned track IDs, or long missing
+intervals. Preserve raw and cleaned positions so smoothing can be tuned
 without rerunning the models.
+
+If a live output is added, replace smoothing  with a causal EMA, One Euro filter, or Kalman filter.
 
 ## Runtime ownership
 
@@ -205,7 +189,6 @@ src/nba_3d_scene_reconstruction/court/
 
 A segment-level pipeline runs player tracking and court calibration against
 the same original frame and joins their results by `(segment_id, frame_idx)`.
-The player tracker must not call the court detector directly.
 
 Minimal control flow:
 
@@ -269,7 +252,7 @@ artifacts/<clip_id>/<segment_id>/
 Write calibration records for detected, held, and invalid frames. Flatten
 NumPy matrices only when serializing them.
 
-## Debugging with `sports.basketball`
+## Birds eye court debug with `sports.basketball`
 
 Use `CourtConfiguration`, `draw_court`, and `draw_points_on_court` to render a
 canonical NBA minimap with tracker IDs:
@@ -320,8 +303,3 @@ Useful failure patterns:
 6. Implement per-track jump removal, short-gap interpolation, and smoothing.
 7. Add original-frame reprojection and `sports.basketball` minimap videos.
 8. Tune thresholds on clips containing pans, zooms, occlusion, and cuts.
-
-The MVP is complete when every saved player position is traceable to a valid
-calibration, invalid frames do not fabricate coordinates, raw and cleaned paths
-are both reproducible, and the debug render can identify whether an error came
-from calibration or player tracking.
