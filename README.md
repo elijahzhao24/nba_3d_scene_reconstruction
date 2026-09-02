@@ -427,11 +427,11 @@ data contract is stable.
 
 ## Low Level Design
 
-- [Player tracking](TRACKING.md)
+- [Player tracking](/LLDS/TRACKING.md)
 - Player detector interface
 - Tracker and segmentation interface
 - Team assignment pipeline
-- Court landmark and homography calibration
+- [Court landmark and homography calibration](/LLDS/COURT_HOMOGRAPHY_CALIBRATION.md)
 - 2D pose estimator interface
 - 3D pose lifter interface
 - Temporal correction algorithms
