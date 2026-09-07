@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import math
 import os
 from dataclasses import dataclass
-
 
 DEFAULT_COURT_MODEL_ID = "basketball-court-detection-2/22"
 DEFAULT_COURT_API_URL = "https://serverless.roboflow.com"
@@ -12,9 +12,17 @@ DEFAULT_DETECTION_CONFIDENCE = 0.30
 DEFAULT_KEYPOINT_CONFIDENCE = 0.50
 DEFAULT_PARENT_CLASS_NAME = "court"
 DEFAULT_PARENT_CLASS_ID = 0
+DEFAULT_RANSAC_REPROJECTION_THRESHOLD_PX = 6.0
+DEFAULT_MINIMUM_CORRESPONDENCES = 6
+DEFAULT_MINIMUM_INLIERS = 6
+DEFAULT_MINIMUM_INLIER_RATIO = 0.60
+DEFAULT_MINIMUM_COURT_COVERAGE_RATIO = 0.05
+DEFAULT_MAXIMUM_MEDIAN_REPROJECTION_ERROR_PX = 6.0
+DEFAULT_MAXIMUM_CALIBRATION_AGE_FRAMES = 10
+DEFAULT_LANDMARK_SMOOTHING_ALPHA = 0.5
 
-# The labels intentionally contain gaps (based on roboflow dataset). Their tuple index is the dense
-# landmark index returned by the version-pinned model skeleton.
+# The labels intentionally contain gaps (based on the Roboflow dataset). Their
+# tuple index is the dense landmark index returned by the version-pinned model.
 COURT_LANDMARK_LABELS: tuple[str, ...] = (
     "01",
     "02",
@@ -148,3 +156,61 @@ class CourtDetectorConfiguration:
                 DEFAULT_KEYPOINT_CONFIDENCE,
             ),
         )
+
+
+@dataclass(frozen=True)
+class CourtCalibrationConfiguration:
+    """Numerical thresholds for robust court homography estimation."""
+
+    ransac_reprojection_threshold_px: float = DEFAULT_RANSAC_REPROJECTION_THRESHOLD_PX
+    minimum_correspondences: int = DEFAULT_MINIMUM_CORRESPONDENCES
+    minimum_inliers: int = DEFAULT_MINIMUM_INLIERS
+    minimum_inlier_ratio: float = DEFAULT_MINIMUM_INLIER_RATIO
+    minimum_court_coverage_ratio: float = DEFAULT_MINIMUM_COURT_COVERAGE_RATIO
+    maximum_median_reprojection_error_px: float = (
+        DEFAULT_MAXIMUM_MEDIAN_REPROJECTION_ERROR_PX
+    )
+    maximum_calibration_age_frames: int = DEFAULT_MAXIMUM_CALIBRATION_AGE_FRAMES
+    landmark_smoothing_alpha: float = DEFAULT_LANDMARK_SMOOTHING_ALPHA
+    ransac_max_iterations: int = 2_000
+    ransac_confidence: float = 0.995
+
+    def __post_init__(self) -> None:
+        for name, value in (
+            (
+                "ransac_reprojection_threshold_px",
+                self.ransac_reprojection_threshold_px,
+            ),
+            (
+                "maximum_median_reprojection_error_px",
+                self.maximum_median_reprojection_error_px,
+            ),
+        ):
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be positive")
+
+        for name, value in (
+            ("minimum_correspondences", self.minimum_correspondences),
+            ("minimum_inliers", self.minimum_inliers),
+        ):
+            if value < 4:
+                raise ValueError(f"{name} must be at least 4")
+
+        for name, value in (
+            ("minimum_inlier_ratio", self.minimum_inlier_ratio),
+            ("minimum_court_coverage_ratio", self.minimum_court_coverage_ratio),
+        ):
+            if not 0.0 < value <= 1.0:
+                raise ValueError(f"{name} must be greater than 0 and at most 1")
+
+        if not 0.0 < self.ransac_confidence < 1.0:
+            raise ValueError("ransac_confidence must be between 0 and 1")
+
+        if self.maximum_calibration_age_frames < 0:
+            raise ValueError("maximum_calibration_age_frames must be non-negative")
+        if not 0.0 < self.landmark_smoothing_alpha <= 1.0:
+            raise ValueError(
+                "landmark_smoothing_alpha must be greater than 0 and at most 1"
+            )
+        if self.ransac_max_iterations <= 0:
+            raise ValueError("ransac_max_iterations must be positive")

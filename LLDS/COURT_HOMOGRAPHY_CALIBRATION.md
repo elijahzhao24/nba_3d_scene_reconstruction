@@ -76,9 +76,11 @@ court object, not each landmark. Therefore:
 - apply the identical confidence mask to detected image points and canonical
   court vertices.
 
-`sports.basketball.CourtConfiguration` supplies the canonical NBA geometry.
-Its coordinate plane is 94 by 50 feet, with `x` running between baselines and
-`y` running between sidelines.
+The checked-in landmarks mirror the canonical NBA geometry from
+`sports.basketball.CourtConfiguration`, but store it in centimeters. Its
+coordinate plane is 2865 by 1524 centimeters, with `x` running between
+baselines and `y` running between sidelines. Consequently, `image_to_court`
+also produces centimeters; unit conversion happens only at the export boundary.
 
 ### Homography estimation
 
@@ -127,13 +129,12 @@ court_xy = cv2.perspectiveTransform(point, H)[0, 0]
 Reject positions outside the court plus a small margin.
 The homography maps only the floor plane, so it should not be used to predict the 3d position of something off the ground (head, hand, jumping player, basketball)
 
-If court coordinates are stored in feet, convert them to centered Three.js
-meters with:
+Convert court coordinates from centimeters to centered Three.js meters with:
 
 ```python
-world_x = court_x_ft * 0.3048 - 14.325
+world_x = court_x_cm * 0.01 - 14.325
 world_y = 0.0
-world_z = court_y_ft * 0.3048 - 7.620
+world_z = court_y_cm * 0.01 - 7.620
 ```
 
 The projection must record the calibration frame and age used. If no valid

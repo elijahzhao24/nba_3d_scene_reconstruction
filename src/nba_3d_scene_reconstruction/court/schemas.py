@@ -3,11 +3,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 from typing import TypeAlias
-
 
 Point: TypeAlias = tuple[float, float]
 BoundingBox: TypeAlias = tuple[float, float, float, float]
+Matrix3x3: TypeAlias = tuple[
+    tuple[float, float, float],
+    tuple[float, float, float],
+    tuple[float, float, float],
+]
+
+
+class CalibrationSource(str, Enum):
+    """How a per-frame calibration record was produced."""
+
+    DETECTED = "detected"
+    HELD = "held"
+    INVALID = "invalid"
 
 
 @dataclass(frozen=True)
@@ -43,3 +56,28 @@ class CourtDetection:
             for point in self.keypoints
             if point is not None and point.confidence >= confidence_threshold
         )
+
+
+@dataclass(frozen=True)
+class CourtCalibration:
+    """Image/court transforms and quality for one frame.
+
+    Court coordinates use the centimeters defined by
+    ``COURT_LANDMARK_POINTS_CM``. Conversion to viewer meters belongs at the
+    export boundary.
+    """
+
+    segment_id: str
+    frame_idx: int
+    source_frame_idx: int | None
+    valid: bool
+    source: CalibrationSource
+    image_to_court: Matrix3x3 | None
+    court_to_image: Matrix3x3 | None
+    keypoint_count: int
+    inlier_count: int
+    inlier_ratio: float
+    court_coverage_ratio: float
+    median_error_px: float | None
+    age_frames: int | None
+    quality_flags: tuple[str, ...] = ()

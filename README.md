@@ -199,155 +199,28 @@ The pipeline should keep coordinate spaces explicit:
 | Local skeleton space | Root-relative 3D pose, usually pelvis-relative. This describes body shape but not global court location. |
 | Rig bone space | Bone-local rotations for the generic humanoid model. This is the compact form the viewer needs for animation. |
 
-### High-Level Internal Data Schema
+### Composable Processing State
 
-The inference pipeline should keep a processing schema. This schema stores raw model
-outputs, confidence values, calibration data, intermediate references, cleaned
-states, and manual annotations. It will be useful for debugging and reprocessing.
+The backend should not accumulate every intermediate result in one large DTO.
+Each subproblem should own typed records and, where useful, a store tailored to
+its lifecycle. For example, tracking owns records such as `PlayerObservation`
+and its track history, while court calibration owns court detections,
+homographies, and calibration quality. Pose reconstruction, team assignment,
+and ball annotation can follow the same pattern without depending on one
+shared schema that must change whenever a subsystem changes.
 
+The main pipeline composes these subsystem processors and stores. It coordinates
+them using small stable identifiers such as `clip_id`, `segment_id`,
+`frame_idx`, and `track_id`, but it does not take ownership of all their
+internal state. This keeps raw observations, derived values, confidence data,
+and cleaned results close to the code that understands them, while still
+allowing stages to be debugged or reprocessed independently.
 
-```json
-{
-  "schema_version": "1.0",
-  "clip": {
-    "clip_id": "clip_001",
-    "source_uri": "uploads/clip_001.mp4",
-    "fps": 29.97,
-    "frame_count": 420,
-    "width": 1920,
-    "height": 1080
-  },
-  "segments": [
-    {
-      "segment_id": "segment_001",
-      "start_frame": 0,
-      "end_frame": 419,
-      "camera_view": "broadcast_side"
-    }
-  ],
-  "court": {
-    "units": "meters",
-    "up_axis": "Y",
-    "floor_axes": ["X", "Z"],
-    "length": 28.65,
-    "width": 15.24,
-    "landmarks": [
-      {
-        "landmark_id": 0,
-        "name": "court_corner_left_baseline",
-        "position": [-14.325, 0.0, -7.62]
-      }
-    ]
-  },
-  "teams": [
-    {
-      "team_id": 0,
-      "display_color": "#e5484d",
-      "embedding_centroid_ref": "embeddings/team_0.npy"
-    },
-    {
-      "team_id": 1,
-      "display_color": "#3b82f6",
-      "embedding_centroid_ref": "embeddings/team_1.npy"
-    }
-  ],
-  "tracks": [
-    {
-      "track_id": 7,
-      "role": "player",
-      "start_frame": 14,
-      "end_frame": 419,
-      "team_id": 0,
-      "team_confidence": 0.96,
-      "appearance_embedding_ref": "embeddings/tracks/7.npy"
-    }
-  ],
-  "frames": [
-    {
-      "frame_index": 120,
-      "timestamp_seconds": 4.004,
-      "camera": {
-        "segment_id": "segment_001",
-        "homography_image_to_court": [
-          [0.021, -0.004, -8.42],
-          [0.001, 0.018, -5.31],
-          [0.00001, -0.00002, 1.0]
-        ],
-        "calibration_confidence": 0.92,
-        "reprojection_error": 2.7
-      },
-      "players": [
-        {
-          "track_id": 7,
-          "observation": {
-            "bbox_xyxy": [822, 315, 946, 708],
-            "detection_confidence": 0.96,
-            "tracking_confidence": 0.91,
-            "mask_ref": "masks/120/7.rle"
-          },
-          "grounding": {
-            "image_footpoint": [873.2, 694.8],
-            "footpoint_source": "ankle_midpoint",
-            "court_position": [8.21, 0.0, -3.44],
-            "court_velocity": [1.18, 0.0, 0.35]
-          },
-          "pose_2d": {
-            "skeleton": "coco17",
-            "keypoints": [
-              {
-                "joint": "left_shoulder",
-                "position": [854.2, 397.7],
-                "confidence": 0.94
-              }
-            ]
-          },
-          "pose_3d_local": {
-            "root_joint": "pelvis",
-            "joints": [
-              {
-                "joint": "left_shoulder",
-                "position": [-0.20, 0.57, 0.02],
-                "confidence": 0.88
-              }
-            ]
-          },
-          "world_transform": {
-            "root_position": [8.21, 0.0, -3.44],
-            "root_rotation_xyzw": [0.0, 0.707, 0.0, 0.707]
-          },
-          "rig_pose": {
-            "bone_rotations_xyzw": {
-              "Hips": [0.0, 0.0, 0.0, 1.0],
-              "LeftUpperArm": [0.14, -0.21, 0.04, 0.96]
-            }
-          },
-          "quality": {
-            "pose_valid": true,
-            "court_position_valid": true,
-            "interpolated": false,
-            "occlusion_score": 0.18
-          }
-        }
-      ]
-    }
-  ],
-  "ball_annotations": [
-    {
-      "event_id": "ball_evt_001",
-      "type": "pass",
-      "start_frame": 150,
-      "end_frame": 171,
-      "from_track_id": 7,
-      "to_track_id": 12,
-      "control_points": [
-        [8.21, 1.8, -3.44],
-        [4.10, 2.6, -1.20],
-        [1.05, 1.6, 0.80]
-      ]
-    }
-  ]
-}
-```
+At the output boundary, a dedicated export step reads the required records from
+the composed stores, joins them, validates coordinate conversions, and
+sanitizes them into the compact Three.js animation schema below. The viewer DTO
+is therefore a deliberate presentation format rather than the pipeline's
+internal source of truth.
 
 ### Three.js Animation Schema
 

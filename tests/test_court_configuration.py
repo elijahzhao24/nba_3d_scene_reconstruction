@@ -7,6 +7,7 @@ from unittest.mock import patch
 from nba_3d_scene_reconstruction.court.configuration import (
     COURT_LANDMARK_LABELS,
     COURT_LANDMARK_POINTS_CM,
+    CourtCalibrationConfiguration,
     CourtDetectorConfiguration,
 )
 
@@ -57,6 +58,32 @@ class CourtDetectorConfigurationTest(unittest.TestCase):
                 landmark_labels=("01", "01"),
                 landmark_points_cm=((0.0, 0.0), (1.0, 1.0)),
             )
+
+
+class CourtCalibrationConfigurationTest(unittest.TestCase):
+    def test_has_documented_production_defaults(self) -> None:
+        configuration = CourtCalibrationConfiguration()
+
+        self.assertEqual(configuration.ransac_reprojection_threshold_px, 6.0)
+        self.assertEqual(configuration.minimum_inliers, 6)
+        self.assertEqual(configuration.minimum_inlier_ratio, 0.60)
+        self.assertEqual(configuration.maximum_calibration_age_frames, 10)
+
+    def test_rejects_invalid_numerical_thresholds(self) -> None:
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            CourtCalibrationConfiguration(ransac_reprojection_threshold_px=0.0)
+        with self.assertRaisesRegex(ValueError, "must be positive"):
+            CourtCalibrationConfiguration(
+                maximum_median_reprojection_error_px=float("nan")
+            )
+        with self.assertRaisesRegex(ValueError, "at least 4"):
+            CourtCalibrationConfiguration(minimum_correspondences=3)
+        with self.assertRaisesRegex(ValueError, "greater than 0"):
+            CourtCalibrationConfiguration(minimum_inlier_ratio=0.0)
+        with self.assertRaisesRegex(ValueError, "non-negative"):
+            CourtCalibrationConfiguration(maximum_calibration_age_frames=-1)
+        with self.assertRaisesRegex(ValueError, "between 0 and 1"):
+            CourtCalibrationConfiguration(ransac_confidence=1.0)
 
 
 if __name__ == "__main__":
