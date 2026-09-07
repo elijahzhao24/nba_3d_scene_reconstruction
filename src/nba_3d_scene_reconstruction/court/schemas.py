@@ -81,3 +81,18 @@ class CourtCalibration:
     median_error_px: float | None
     age_frames: int | None
     quality_flags: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlayerCourtPosition:
+    """Raw floor-plane projection in canonical court centimeters."""
+
+    segment_id: str
+    frame_idx: int
+    timestamp_seconds: float
+    track_id: int
+    footpoint_image_xy: Point | None
+    raw_court_xy: Point | None
+    calibration_source_frame_idx: int | None
+    calibration_age_frames: int | None
+    quality_flags: tuple[str, ...] = ()

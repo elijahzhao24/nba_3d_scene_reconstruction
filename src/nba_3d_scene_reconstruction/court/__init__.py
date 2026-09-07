@@ -14,7 +14,11 @@ from .configuration import (
     CourtDetectorConfiguration,
 )
 from .detector import CourtSchemaMismatchError, RoboflowCourtDetector
-from .schemas import CalibrationSource, CourtCalibration, CourtDetection, CourtKeypoint
+from .projector import PlayerCourtProjector
+from .schemas import (
+    CalibrationSource, CourtCalibration, CourtDetection, CourtKeypoint,
+    PlayerCourtPosition,
+)
 
 __all__ = [
     "COURT_LANDMARK_LABELS",
@@ -29,6 +33,8 @@ __all__ = [
     "CourtKeypoint",
     "CourtSchemaMismatchError",
     "HomographyEstimate",
+    "PlayerCourtPosition",
+    "PlayerCourtProjector",
     "RoboflowCourtDetector",
     "build_correspondences",
     "project_points",

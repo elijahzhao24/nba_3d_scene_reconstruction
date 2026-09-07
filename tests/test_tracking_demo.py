@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 import tempfile
 import unittest
 from dataclasses import replace
@@ -10,8 +11,10 @@ import cv2
 import numpy as np
 
 from nba_3d_scene_reconstruction.ingest_video import processNewVideo
-from nba_3d_scene_reconstruction.tracking.schemas import SamMaskPrediction
+from nba_3d_scene_reconstruction.tracking.schemas import SamMaskPrediction, VideoManifest
 from nba_3d_scene_reconstruction.tracking_demo import render_tracking_video
+from test_court_calibration import synthetic_detection
+from test_scene_pipeline import FakeCourtDetector, make_scene
 
 
 class FakeTrackingPipeline:
@@ -34,6 +37,32 @@ class FakeTrackingPipeline:
 
 
 class TrackingDemoTest(unittest.TestCase):
+    def test_scene_demo_persists_synchronized_raw_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            frames = root / "frames"
+            frames.mkdir()
+            for frame_idx in range(3):
+                cv2.imwrite(str(frames / f"{frame_idx:06d}.jpg"),
+                            np.zeros((480, 640, 3), dtype=np.uint8))
+            scene = make_scene(FakeCourtDetector({0: synthetic_detection()}))
+            manifest = VideoManifest("clip", "segment-1", "source.mp4", str(frames),
+                                     25.0, 640, 480, 3)
+            render_tracking_video(manifest, scene, root / "overlay.mp4",
+                                  records_dir=root / "records", max_frames=2)
+            records = {}
+            for name in ("observations", "court_detections", "calibrations",
+                         "player_court_positions_raw"):
+                records[name] = [json.loads(line) for line in
+                                 (root / "records" / f"{name}.jsonl").read_text().splitlines()]
+            self.assertEqual(len(records["court_detections"]), 1)
+            for name in ("observations", "calibrations", "player_court_positions_raw"):
+                self.assertEqual([row["frame_idx"] for row in records[name]], [0, 1])
+            position = records["player_court_positions_raw"][1]
+            self.assertIsNotNone(position["raw_court_xy"])
+            self.assertEqual(position["timestamp_seconds"], 1 / 25)
+            self.assertEqual(position["calibration_age_frames"], 1)
+
     def test_ingests_video_and_renders_mask_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

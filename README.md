@@ -16,6 +16,47 @@ https://github.com/user-attachments/assets/a7482237-7b0e-4695-8338-80ef4f4b170a
 
 **Visalize to Three.js (WIP)**
 
+## Tracking observations and court projection
+
+Run the models with court detection at frames `0, 5, 10, ...`:
+
+```bash
+uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
+  --court-projection --max-frames 60
+```
+
+This writes the existing mask/ID video and four JSONL files under
+`artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
+`court_detections.jsonl`, `calibrations.jsonl`, and
+`player_court_positions_raw.jsonl`. The environment must configure both the
+player and court models as described in `.env.example`.
+
+`PlayerTrackingPipeline.process_frame()` still returns masks; its
+`observations` attribute contains the latest frame's `PlayerObservation`
+records. Pass the video's actual `fps` when constructing the tracker (the
+standalone default is 30). Observations use the largest connected mask
+component and estimate the footpoint at the bottom, with x taken from the
+median of the lowest 5% of the component's height. Empty/absent masks produce
+missing observations; newly prompted checkpoint tracks remain missing until
+SAM returns a mask. Detection confidence is recorded only on frames where
+that track was matched or created by the detector. Mask-derived observations
+retain `sam2_propagation` provenance; checkpoint re-prompts affect subsequent
+propagation. Masks remain in memory and `mask_ref` is unset.
+
+`SceneReconstructionPipeline` joins those observations with per-frame
+calibrations and returns a `SceneFrame`. Between court checkpoints it holds
+the last valid calibration, with the existing ten-frame expiration limit.
+Create a new tracking/scene pipeline per continuous segment; starting it
+resets calibration for that segment. Camera-cut detection is not automatic.
+
+`court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
+in **centimeters**, plus the calibration source frame, age, and quality flags.
+Invalid calibration, missing footpoints, projection at infinity, and positions
+outside the court plus a configurable 100 cm margin produce a null position.
+Footpoints are approximate floor contacts; jumping and occlusion still need
+later trajectory cleanup. Bird's-eye rendering and Three.js export remain
+future steps.
+
 ## Summary
 
 The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.

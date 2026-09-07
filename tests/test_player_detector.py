@@ -100,7 +100,7 @@ class RoboflowPlayerDetectorTest(unittest.TestCase):
                 model=model,
             )
 
-        self.assertEqual(detector.confidence_threshold, 0.65)
+        self.assertEqual(detector.confidence_threshold, 0.67)
         self.assertEqual(detector.detect("frame.jpg", 0), ())
 
     def test_rejects_invalid_configuration_and_frame_index(self) -> None:

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import json
+from contextlib import ExitStack
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +13,8 @@ import cv2
 import numpy as np
 
 from .ingest_video import processNewVideo
+from .court.detector import RoboflowCourtDetector
+from .pipeline import SceneFrame, SceneReconstructionPipeline
 from .tracking.association_engine import PlayerAssociationEngine
 from .tracking.pipeline import PlayerTrackingPipeline
 from .tracking.player_detector import RoboflowPlayerDetector
@@ -88,8 +93,9 @@ def render_tracking_video(
     output_path: str | Path,
     *,
     max_frames: int | None = None,
+    records_dir: str | Path | None = None,
 ) -> Path:
-    """Process extracted frames and write a mask-overlay debug video."""
+    """Write the existing mask overlay, optionally persisting scene records."""
     if max_frames is not None and max_frames <= 0:
         raise ValueError("max_frames must be positive")
 
@@ -119,16 +125,40 @@ def render_tracking_video(
     if not writer.isOpened():
         raise OSError(f"could not create output video: {destination}")
 
-    pipeline.start_segment(manifest.frames_dir)
     try:
-        for frame_idx in range(frame_count):
-            frame_path = Path(manifest.frames_dir) / f"{frame_idx:06d}.jpg"
-            frame = cv2.imread(str(frame_path))
-            if frame is None:
-                raise OSError(f"could not read extracted frame: {frame_path}")
+        with ExitStack() as stack:
+            streams = {}
+            if records_dir is not None:
+                root = Path(records_dir)
+                root.mkdir(parents=True, exist_ok=True)
+                for name in ("observations", "court_detections", "calibrations",
+                             "player_court_positions_raw"):
+                    streams[name] = stack.enter_context(
+                        (root / f"{name}.jsonl").open("w", encoding="utf-8")
+                    )
+            pipeline.start_segment(manifest.frames_dir)
+            for frame_idx in range(frame_count):
+                frame_path = Path(manifest.frames_dir) / f"{frame_idx:06d}.jpg"
+                frame = cv2.imread(str(frame_path))
+                if frame is None:
+                    raise OSError(f"could not read extracted frame: {frame_path}")
 
-            masks = pipeline.process_frame(frame, frame_idx)
-            writer.write(draw_tracking_overlay(frame, masks))
+                result = pipeline.process_frame(frame, frame_idx)
+                masks = result.masks if isinstance(result, SceneFrame) else result
+                if streams:
+                    if not isinstance(result, SceneFrame):
+                        raise TypeError("records_dir requires a scene pipeline")
+                    records = {
+                        "observations": result.observations,
+                        "court_detections": (() if result.court_detection is None
+                                             else (result.court_detection,)),
+                        "calibrations": (result.calibration,),
+                        "player_court_positions_raw": result.positions,
+                    }
+                    for name, values in records.items():
+                        for value in values:
+                            streams[name].write(json.dumps(asdict(value), allow_nan=False) + "\n")
+                writer.write(draw_tracking_overlay(frame, masks))
     finally:
         writer.release()
 
@@ -141,7 +171,8 @@ def run_tracking_demo(
     output_path: str | Path | None = None,
     detector_interval: int = 5,
     max_frames: int | None = None,
-    skip_frame_extraction: int = 0
+    skip_frame_extraction: int = 0,
+    court_projection: bool = False,
 ) -> Path:
     """Ingest one video, run the real models, and render an overlay video."""
     if not skip_frame_extraction:
@@ -152,7 +183,13 @@ def run_tracking_demo(
         association_engine=PlayerAssociationEngine(),
         track_manager=PlayerTrackManager(manifest.segment_id),
         detector_interval=detector_interval,
+        fps=manifest.fps,
     )
+    if court_projection:
+        pipeline = SceneReconstructionPipeline(
+            tracking_pipeline=pipeline,
+            court_detector=RoboflowCourtDetector(),
+        )
 
     if output_path is None:
         output_path = (
@@ -166,6 +203,7 @@ def run_tracking_demo(
         pipeline,
         output_path,
         max_frames=max_frames,
+        records_dir=Path(manifest.frames_dir).parent if court_projection else None,
     )
 
 
@@ -190,6 +228,11 @@ def main() -> None:
         help="Process only the first N frames for a quick test",
     )
     parser.add_argument(
+        "--court-projection",
+        action="store_true",
+        help="Detect/calibrate court every five frames and save raw positions as JSONL",
+    )
+    parser.add_argument(
         "--skip-frame-extraction",
         type=int,
         help="Use whatever is already in artifacts",
@@ -202,6 +245,7 @@ def main() -> None:
         detector_interval=args.detector_interval,
         max_frames=args.max_frames,
         skip_frame_extraction = args.skip_frame_extraction,
+        court_projection=args.court_projection,
     )
     print(f"Tracking overlay written to {output}")
 

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .association_engine import PlayerAssociationEngine
+from .observations import build_player_observations
 from .player_detector import RoboflowPlayerDetector
 from .sam2_tracker import Sam2PlayerTracker
-from .schemas import PlayerDetection, SamMaskPrediction
+from .schemas import PlayerDetection, PlayerObservation, SamMaskPrediction
 from .track_manager import PlayerTrackManager
 
 
@@ -22,12 +24,20 @@ class PlayerTrackingPipeline:
         association_engine: PlayerAssociationEngine,
         track_manager: PlayerTrackManager,
         detector_interval: int = 5,
+        fps: float = 30.0,
     ) -> None:
+        if not isinstance(detector_interval, int) or detector_interval <= 0:
+            raise ValueError("detector_interval must be a positive integer")
+        if not math.isfinite(fps) or fps <= 0:
+            raise ValueError("fps must be finite and positive")
         self.detector = detector
         self.sam_tracker = sam_tracker
         self.association_engine = association_engine
         self.track_manager = track_manager
         self.detector_interval = detector_interval
+        self.fps = fps
+        self.observations: tuple[PlayerObservation, ...] = ()
+        self._frame_detection_confidences: dict[int, float] = {}
 
         self._started = False
         self._last_frame_idx = -1
@@ -46,6 +56,7 @@ class PlayerTrackingPipeline:
     ) -> tuple[SamMaskPrediction, ...]:
         """Process one frame; frames must arrive sequentially starting at zero."""
         self._validate_next_frame(frame_idx)
+        self._frame_detection_confidences = {}
 
         if frame_idx == 0:
             self._initialize_players(frame)
@@ -57,6 +68,14 @@ class PlayerTrackingPipeline:
             if frame_idx % self.detector_interval == 0:
                 self._run_detector_checkpoint(frame, frame_idx, masks)
 
+        self.observations = build_player_observations(
+            masks,
+            segment_id=self.track_manager.segment_id,
+            frame_idx=frame_idx,
+            fps=self.fps,
+            track_ids=self.track_manager.tracks,
+            detection_confidences=self._frame_detection_confidences,
+        )
         self._last_frame_idx = frame_idx
         return masks
 
@@ -79,6 +98,7 @@ class PlayerTrackingPipeline:
 
         for match in result.matches:
             detection = detections[match.detection_index]
+            self._frame_detection_confidences[match.track_id] = detection.confidence
             self.track_manager.mark_visible(
                 match.track_id,
                 frame_idx,
@@ -98,6 +118,7 @@ class PlayerTrackingPipeline:
 
     def _create_and_prompt_track(self, detection: PlayerDetection) -> None:
         track = self.track_manager.create_track(detection)
+        self._frame_detection_confidences[track.track_id] = detection.confidence
         self.sam_tracker.prompt_player(
             detection.frame_idx,
             track.track_id,
