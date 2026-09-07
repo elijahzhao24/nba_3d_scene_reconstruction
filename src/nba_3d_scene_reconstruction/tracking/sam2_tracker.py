@@ -27,9 +27,13 @@ class Sam2PlayerTracker:
         self,
         *,
         predictor: Any | None = None,
+        offload_video_to_cpu: bool = True,
+        offload_state_to_cpu: bool = True,
     ) -> None:
         # Passing a predictor is only needed by tests. Production uses SAM 2.
         self.predictor = predictor or _load_predictor()
+        self.offload_video_to_cpu = offload_video_to_cpu
+        self.offload_state_to_cpu = offload_state_to_cpu
         self._state: object | None = None
         self._track_ids: set[int] = set()
 
@@ -43,8 +47,22 @@ class Sam2PlayerTracker:
         if self._state is not None:
             self.predictor.reset_state(self._state)
 
-        self._state = self.predictor.init_state(os.fspath(frames_dir))
+        # SAM's defaults retain the whole resized video and tracking history on
+        # the GPU. Store them in host RAM so longer clips leave room for inference.
+        self._state = self.predictor.init_state(
+            os.fspath(frames_dir),
+            offload_video_to_cpu=self.offload_video_to_cpu,
+            offload_state_to_cpu=self.offload_state_to_cpu,
+        )
         self._track_ids.clear()
+
+    def remove_player(self, track_id: int) -> None:
+        """Release a retired object's SAM history without recomputing old masks."""
+        state = self._require_state()
+        if track_id not in self._track_ids:
+            return
+        self.predictor.remove_object(state, obj_id=track_id, need_output=False)
+        self._track_ids.remove(track_id)
 
     # Existing ID's added to a set has no effect.
     # so prompt_player works for both addition and corrections

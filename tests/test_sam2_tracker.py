@@ -25,16 +25,29 @@ class FakeTensor:
 class FakeSam2Predictor:
     def __init__(self) -> None:
         self.state = object()
-        self.init_calls: list[str] = []
+        self.init_calls: list[dict[str, object]] = []
         self.prompt_calls: list[dict[str, object]] = []
         self.propagate_calls: list[dict[str, object]] = []
         self.reset_calls: list[object] = []
+        self.remove_calls: list[dict[str, object]] = []
         self.output_object_ids: tuple[int, ...] = ()
         self.output_mask_logits = np.empty((0, 1, 2, 2), dtype=np.float32)
 
-    def init_state(self, video_path: str) -> object:
-        self.init_calls.append(video_path)
+    def init_state(
+        self, video_path: str, *, offload_video_to_cpu: bool,
+        offload_state_to_cpu: bool,
+    ) -> object:
+        self.init_calls.append({
+            "video_path": video_path,
+            "offload_video_to_cpu": offload_video_to_cpu,
+            "offload_state_to_cpu": offload_state_to_cpu,
+        })
         return self.state
+
+    def remove_object(self, inference_state, *, obj_id, need_output):
+        self.remove_calls.append({
+            "state": inference_state, "obj_id": obj_id, "need_output": need_output,
+        })
 
     def add_new_points_or_box(
         self,
@@ -73,7 +86,11 @@ class Sam2PlayerTrackerTest(unittest.TestCase):
         self.tracker.start_segment(Path("frames"))
         self.tracker.prompt_player(0, 7, (10.0, 20.0, 30.0, 60.0))
 
-        self.assertEqual(self.predictor.init_calls, ["frames"])
+        self.assertEqual(self.predictor.init_calls, [{
+            "video_path": "frames",
+            "offload_video_to_cpu": True,
+            "offload_state_to_cpu": True,
+        }])
         prompt = self.predictor.prompt_calls[0]
         self.assertIs(prompt["state"], self.predictor.state)
         self.assertEqual(prompt["frame_idx"], 0)
@@ -134,6 +151,36 @@ class Sam2PlayerTrackerTest(unittest.TestCase):
         self.tracker.start_segment("frames")
         with self.assertRaisesRegex(ValueError, "positive width"):
             self.tracker.prompt_player(0, 1, (10, 0, 10, 20))
+
+    def test_can_opt_out_of_cpu_storage(self) -> None:
+        tracker = Sam2PlayerTracker(
+            predictor=self.predictor, offload_video_to_cpu=False,
+            offload_state_to_cpu=False,
+        )
+        tracker.start_segment("frames")
+        self.assertFalse(self.predictor.init_calls[0]["offload_video_to_cpu"])
+        self.assertFalse(self.predictor.init_calls[0]["offload_state_to_cpu"])
+
+    def test_removal_releases_sam_object_without_requesting_historical_masks(self) -> None:
+        self.tracker.start_segment("frames")
+        self.tracker.prompt_player(0, 7, (0, 0, 10, 20))
+        self.tracker.prompt_player(0, 11, (20, 0, 30, 20))
+        self.tracker.remove_player(7)
+        self.tracker.remove_player(7)
+        self.assertEqual(self.tracker.track_ids, frozenset({11}))
+        self.assertEqual(self.predictor.remove_calls, [{
+            "state": self.predictor.state, "obj_id": 7, "need_output": False,
+        }])
+        self.tracker.remove_player(11)
+        self.assertEqual(self.tracker.propagate_frame(1), ())
+        self.assertEqual(self.predictor.propagate_calls, [])
+
+    def test_new_segment_clears_previous_tracks(self) -> None:
+        self.tracker.start_segment("frames")
+        self.tracker.prompt_player(0, 7, (0, 0, 10, 20))
+        self.tracker.start_segment("next-frames")
+        self.assertEqual(self.predictor.reset_calls, [self.predictor.state])
+        self.assertEqual(self.tracker.track_ids, frozenset())
 
 
 if __name__ == "__main__":

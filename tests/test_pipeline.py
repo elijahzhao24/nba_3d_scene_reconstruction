@@ -42,6 +42,7 @@ class FakeSamTracker:
         self.outputs = outputs
         self.started_with: str | None = None
         self.prompts: list[tuple[int, int, tuple[float, float, float, float]]] = []
+        self.removed_ids: list[int] = []
 
     def start_segment(self, frames_dir: str) -> None:
         self.started_with = frames_dir
@@ -51,6 +52,9 @@ class FakeSamTracker:
 
     def propagate_frame(self, frame_idx: int):
         return self.outputs.get(frame_idx, ())
+
+    def remove_player(self, track_id: int) -> None:
+        self.removed_ids.append(track_id)
 
 
 class PlayerTrackingPipelineTest(unittest.TestCase):
@@ -121,10 +125,12 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
         pipeline.process_frame(object(), 0)
         pipeline.process_frame(object(), 1)
         self.assertEqual(manager.tracks[1].status, TrackStatus.MISSING)
+        self.assertEqual(sam.removed_ids, [])
 
         pipeline.process_frame(object(), 2)
         self.assertEqual(manager.tracks, {})
         self.assertEqual(pipeline.observations, ())
+        self.assertEqual(sam.removed_ids, [1])
 
     def test_requires_start_and_sequential_frames(self) -> None:
         pipeline = PlayerTrackingPipeline(

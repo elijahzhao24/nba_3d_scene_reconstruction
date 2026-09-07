@@ -34,11 +34,9 @@ class _InferenceClient(Protocol):
 def _load_client(api_url: str, api_key: str) -> _InferenceClient:
     # Keep the optional network SDK out of module import time so configuration,
     # parsing, and unit tests do not create clients or perform network I/O.
-    from inference_sdk import InferenceConfiguration, InferenceHTTPClient
+    from inference_sdk import InferenceHTTPClient
 
-    client = InferenceHTTPClient(api_url=api_url, api_key=api_key).configure(
-        InferenceConfiguration(api_key_transport="header")
-    )
+    client = InferenceHTTPClient(api_url=api_url, api_key=api_key)
     return cast(_InferenceClient, client)
 
 

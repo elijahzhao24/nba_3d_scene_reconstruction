@@ -31,6 +31,14 @@ This writes the existing mask/ID video and four JSONL files under
 `player_court_positions_raw.jsonl`. The environment must configure both the
 player and court models as described in `.env.example`.
 
+SAM 2 stores video frames and tracking history in CPU RAM by default to leave
+GPU memory available for inference. Its model still runs on the GPU. CPU
+storage can slow processing and increases host-memory use; it does not change
+the output resolution or playback FPS. Retired tracks are also removed from
+SAM 2's internal state. On a GPU with more memory, a custom runner can pass
+`offload_video_to_cpu=False` and/or `offload_state_to_cpu=False` to
+`Sam2PlayerTracker`.
+
 `PlayerTrackingPipeline.process_frame()` still returns masks; its
 `observations` attribute contains the latest frame's `PlayerObservation`
 records. Pass the video's actual `fps` when constructing the tracker (the

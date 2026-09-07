@@ -152,7 +152,9 @@ class PlayerTrackingPipeline:
             if track_id in visible_track_ids:
                 self.track_manager.mark_visible(track_id, frame_idx)
             else:
-                self.track_manager.mark_missing(track_id, frame_idx)
+                retired = self.track_manager.mark_missing(track_id, frame_idx)
+                if retired is not None:
+                    self.sam_tracker.remove_player(track_id)
 
     def _validate_next_frame(self, frame_idx: int) -> None:
         if not self._started:

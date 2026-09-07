@@ -48,6 +48,20 @@ def court_prediction(
 
 
 class RoboflowCourtDetectorTest(unittest.TestCase):
+    def test_constructs_with_installed_sdk_without_network_io(self) -> None:
+        # Exercise the real SDK constructor: fake clients cannot catch invalid
+        # InferenceConfiguration options or constructor signature changes.
+        from inference_sdk import InferenceHTTPClient
+
+        with (
+            patch.dict(os.environ, {"ROBOFLOW_API_KEY": "test-key"}, clear=True),
+            patch("requests.sessions.Session.request") as request,
+        ):
+            detector = RoboflowCourtDetector(CourtDetectorConfiguration())
+
+        self.assertIsInstance(detector.client, InferenceHTTPClient)
+        request.assert_not_called()
+
     def test_runs_model_and_densifies_shuffled_sparse_keypoints(self) -> None:
         result = {
             "predictions": [
