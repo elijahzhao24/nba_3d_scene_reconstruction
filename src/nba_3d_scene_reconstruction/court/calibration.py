@@ -267,7 +267,22 @@ class CourtCalibrator:
         segment_id: str,
         frame_idx: int,
     ) -> CourtCalibration:
-        """Process a checkpoint detection or reuse recent valid state."""
+        """Process an attempted checkpoint detection or reuse recent valid state."""
+        return self._advance(
+            detection,
+            segment_id=segment_id,
+            frame_idx=frame_idx,
+            missing_detection_flags=("court_detection_missing",),
+        )
+
+    def _advance(
+        self,
+        detection: CourtDetection | None,
+        *,
+        segment_id: str,
+        frame_idx: int,
+        missing_detection_flags: tuple[str, ...],
+    ) -> CourtCalibration:
         if not segment_id:
             raise ValueError("segment_id must not be empty")
         if frame_idx < 0:
@@ -282,7 +297,7 @@ class CourtCalibrator:
                 f"last frame was {state.last_frame_idx}"
             )
 
-        failure_flags: tuple[str, ...] = ("court_detection_missing",)
+        failure_flags = missing_detection_flags
         failed_estimate: HomographyEstimate | None = None
         if detection is not None:
             candidates = self._smoothed_candidates(state, detection)
@@ -323,7 +338,12 @@ class CourtCalibrator:
 
     def current(self, *, segment_id: str, frame_idx: int) -> CourtCalibration:
         """Return held/invalid state on a frame without court inference."""
-        return self.update(None, segment_id=segment_id, frame_idx=frame_idx)
+        return self._advance(
+            None,
+            segment_id=segment_id,
+            frame_idx=frame_idx,
+            missing_detection_flags=(),
+        )
 
     def reset(self, segment_id: str | None = None) -> None:
         """Forget temporal state after a cut, for one segment or all segments."""

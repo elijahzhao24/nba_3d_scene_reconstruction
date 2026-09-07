@@ -10,81 +10,18 @@ from pathlib import Path
 from typing import Any
 
 import cv2
-import numpy as np
 
-from .ingest_video import processNewVideo
+from .court.debug import CourtDebugRenderer
 from .court.detector import RoboflowCourtDetector
+from .ingest_video import processNewVideo
 from .pipeline import SceneFrame, SceneReconstructionPipeline
 from .tracking.association_engine import PlayerAssociationEngine
+from .tracking.debug import TRACK_COLORS, draw_tracking_overlay
 from .tracking.pipeline import PlayerTrackingPipeline
 from .tracking.player_detector import RoboflowPlayerDetector
 from .tracking.sam2_tracker import Sam2PlayerTracker
-from .tracking.schemas import SamMaskPrediction, VideoManifest
+from .tracking.schemas import VideoManifest
 from .tracking.track_manager import PlayerTrackManager
-
-
-TRACK_COLORS = (
-    (66, 135, 245),
-    (80, 200, 120),
-    (235, 90, 90),
-    (80, 210, 230),
-    (210, 110, 220),
-    (230, 170, 70),
-)
-
-
-def draw_tracking_overlay(
-    frame: np.ndarray,
-    masks: tuple[SamMaskPrediction, ...],
-    *,
-    alpha: float = 0.45,
-) -> np.ndarray:
-    """Draw colored masks, outlines, and track IDs on one video frame."""
-    if not 0.0 <= alpha <= 1.0:
-        raise ValueError("alpha must be between 0 and 1")
-
-    result = frame.copy()
-    expected_shape = frame.shape[:2]
-
-    for prediction in masks:
-        mask = np.asarray(prediction.mask, dtype=np.bool_)
-        if mask.shape != expected_shape:
-            raise ValueError(
-                f"mask shape {mask.shape} does not match frame shape {expected_shape}"
-            )
-        if not mask.any():
-            continue
-
-        color = TRACK_COLORS[prediction.track_id % len(TRACK_COLORS)]
-        color_layer = result.copy()
-        color_layer[mask] = color
-        result = cv2.addWeighted(color_layer, alpha, result, 1.0 - alpha, 0)
-
-        mask_image = mask.astype(np.uint8)
-        contours, _ = cv2.findContours(
-            mask_image,
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE,
-        )
-        cv2.drawContours(result, contours, -1, color, 2)
-
-        y_coordinates, x_coordinates = np.nonzero(mask)
-        label_position = (
-            int(x_coordinates.min()),
-            max(18, int(y_coordinates.min()) - 6),
-        )
-        cv2.putText(
-            result,
-            f"ID {prediction.track_id}",
-            label_position,
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.6,
-            color,
-            2,
-            cv2.LINE_AA,
-        )
-
-    return result
 
 
 def render_tracking_video(
@@ -116,14 +53,14 @@ def render_tracking_video(
     else:
         raise ValueError("output path must end in .webm or .mp4")
 
-    writer = cv2.VideoWriter(
-        str(destination),
-        cv2.VideoWriter_fourcc(*codec),
-        fps,
-        (manifest.width, manifest.height),
+    writer: cv2.VideoWriter | None = None
+    court_renderer = (
+        CourtDebugRenderer(
+            pipeline.calibrator.estimator.detector_configuration,
+        )
+        if isinstance(pipeline, SceneReconstructionPipeline)
+        else None
     )
-    if not writer.isOpened():
-        raise OSError(f"could not create output video: {destination}")
 
     try:
         with ExitStack() as stack:
@@ -158,9 +95,24 @@ def render_tracking_video(
                     for name, values in records.items():
                         for value in values:
                             streams[name].write(json.dumps(asdict(value), allow_nan=False) + "\n")
-                writer.write(draw_tracking_overlay(frame, masks))
+                rendered = (
+                    court_renderer.render(frame, result, fps=fps)
+                    if court_renderer is not None and isinstance(result, SceneFrame)
+                    else draw_tracking_overlay(frame, masks)
+                )
+                if writer is None:
+                    writer = cv2.VideoWriter(
+                        str(destination),
+                        cv2.VideoWriter_fourcc(*codec),
+                        fps,
+                        (rendered.shape[1], rendered.shape[0]),
+                    )
+                    if not writer.isOpened():
+                        raise OSError(f"could not create output video: {destination}")
+                writer.write(rendered)
     finally:
-        writer.release()
+        if writer is not None:
+            writer.release()
 
     return destination
 
@@ -192,10 +144,11 @@ def run_tracking_demo(
         )
 
     if output_path is None:
+        filename = "court_debug.webm" if court_projection else "tracking_overlay.webm"
         output_path = (
             Path(manifest.frames_dir).parent
             / "debug"
-            / "tracking_overlay.webm"
+            / filename
         )
 
     return render_tracking_video(
@@ -209,7 +162,7 @@ def run_tracking_demo(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Run player tracking and render SAM mask overlays.",
+        description="Run player tracking and render synchronized diagnostics.",
     )
     parser.add_argument("video", help="Path to the input video")
     parser.add_argument(
@@ -230,7 +183,8 @@ def main() -> None:
     parser.add_argument(
         "--court-projection",
         action="store_true",
-        help="Detect/calibrate court every five frames and save raw positions as JSONL",
+        help=("Detect/calibrate the court every five frames, save raw records, "
+              "and render a synchronized top-down court"),
     )
     parser.add_argument(
         "--skip-frame-extraction",
@@ -247,7 +201,7 @@ def main() -> None:
         skip_frame_extraction = args.skip_frame_extraction,
         court_projection=args.court_projection,
     )
-    print(f"Tracking overlay written to {output}")
+    print(f"Debug video written to {output}")
 
 
 if __name__ == "__main__":

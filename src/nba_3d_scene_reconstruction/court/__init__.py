@@ -14,6 +14,7 @@ from .configuration import (
     CourtDetectorConfiguration,
 )
 from .detector import CourtSchemaMismatchError, RoboflowCourtDetector
+from .debug import CourtDebugRenderer, draw_source_overlay
 from .projector import PlayerCourtProjector
 from .schemas import (
     CalibrationSource, CourtCalibration, CourtDetection, CourtKeypoint,
@@ -29,6 +30,7 @@ __all__ = [
     "CourtCalibrator",
     "CourtDetection",
     "CourtDetectorConfiguration",
+    "CourtDebugRenderer",
     "CourtHomographyEstimator",
     "CourtKeypoint",
     "CourtSchemaMismatchError",
@@ -37,5 +39,6 @@ __all__ = [
     "PlayerCourtProjector",
     "RoboflowCourtDetector",
     "build_correspondences",
+    "draw_source_overlay",
     "project_points",
 ]

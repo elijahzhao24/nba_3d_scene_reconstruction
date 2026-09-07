@@ -48,8 +48,13 @@ class TrackingDemoTest(unittest.TestCase):
             scene = make_scene(FakeCourtDetector({0: synthetic_detection()}))
             manifest = VideoManifest("clip", "segment-1", "source.mp4", str(frames),
                                      25.0, 640, 480, 3)
-            render_tracking_video(manifest, scene, root / "overlay.mp4",
-                                  records_dir=root / "records", max_frames=2)
+            output = render_tracking_video(
+                manifest,
+                scene,
+                root / "overlay.mp4",
+                records_dir=root / "records",
+                max_frames=2,
+            )
             records = {}
             for name in ("observations", "court_detections", "calibrations",
                          "player_court_positions_raw"):
@@ -62,6 +67,13 @@ class TrackingDemoTest(unittest.TestCase):
             self.assertIsNotNone(position["raw_court_xy"])
             self.assertEqual(position["timestamp_seconds"], 1 / 25)
             self.assertEqual(position["calibration_age_frames"], 1)
+            capture = cv2.VideoCapture(str(output))
+            self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_COUNT)), 2)
+            self.assertGreater(int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), 640)
+            success, rendered = capture.read()
+            capture.release()
+            self.assertTrue(success)
+            self.assertGreater(int(rendered[:, 640:].max()), 0)
 
     def test_ingests_video_and_renders_mask_overlay(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

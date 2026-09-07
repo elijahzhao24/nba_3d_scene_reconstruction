@@ -25,7 +25,14 @@ uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
   --court-projection --max-frames 60
 ```
 
-This writes the existing mask/ID video and four JSONL files under
+This writes a synchronized diagnostic video to
+`artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
+the source video with masks, IDs, player footpoints, detected court keypoints,
+and canonical landmarks reprojected through the homography. Its right side
+shows raw player dots and IDs on a fixed top-down court, plus calibration
+status, age, fit metrics, and quality flags.
+
+The command also writes four JSONL files under
 `artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
 `court_detections.jsonl`, `calibrations.jsonl`, and
 `player_court_positions_raw.jsonl`. The environment must configure both the
@@ -62,8 +69,9 @@ in **centimeters**, plus the calibration source frame, age, and quality flags.
 Invalid calibration, missing footpoints, projection at infinity, and positions
 outside the court plus a configurable 100 cm margin produce a null position.
 Footpoints are approximate floor contacts; jumping and occlusion still need
-later trajectory cleanup. Bird's-eye rendering and Three.js export remain
-future steps.
+later trajectory cleanup. The top-down view deliberately shows raw positions
+so calibration and footpoint failures stay visible. Three.js export remains a
+future step.
 
 ## Summary
 

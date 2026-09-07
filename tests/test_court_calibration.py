@@ -265,6 +265,7 @@ class CourtCalibratorTest(unittest.TestCase):
         self.assertEqual(held.source, CalibrationSource.HELD)
         self.assertEqual(held.age_frames, 1)
         self.assertEqual(held.image_to_court, detected.image_to_court)
+        self.assertNotIn("court_detection_missing", held.quality_flags)
         self.assertEqual(held_after_failure.source, CalibrationSource.HELD)
         self.assertIn(
             "insufficient_correspondences",
@@ -292,6 +293,21 @@ class CourtCalibratorTest(unittest.TestCase):
         other = self.calibrator.current(segment_id="segment-2", frame_idx=0)
 
         self.assertEqual(other.source, CalibrationSource.INVALID)
+        self.assertEqual(other.quality_flags, ())
+
+    def test_checkpoint_without_detection_is_distinct_from_unscheduled_frame(self) -> None:
+        self.calibrator.update(
+            synthetic_detection(frame_idx=0),
+            segment_id="segment-1",
+            frame_idx=0,
+        )
+        missing_checkpoint = self.calibrator.update(
+            None,
+            segment_id="segment-1",
+            frame_idx=1,
+        )
+
+        self.assertIn("court_detection_missing", missing_checkpoint.quality_flags)
 
     def test_smooths_landmarks_before_the_next_fit(self) -> None:
         configuration = CourtCalibrationConfiguration(
