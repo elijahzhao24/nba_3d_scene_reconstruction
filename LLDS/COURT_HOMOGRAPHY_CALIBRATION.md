@@ -17,7 +17,7 @@ The court model and player tracker solve different parts of this:
 ```text
 Video frame
     |
-    +--> every K frames: court keypoint detection
+    +--> every frame by default: court keypoint detection
     |          |
     |          v
     |     validate landmark schema and confidence
@@ -46,9 +46,10 @@ Video frame
         saved positions + debug court video + Three.js output
 ```
 
-The MVP runs court inference on frame `0` and every fifth frame. Intermediate
-frames use the latest valid homography. If camera motion makes that visibly
-lag, optical flow can update the landmarks between model checkpoints later.
+The MVP runs court inference on every frame so pans and zooms receive a fresh
+homography. `--court-interval N` can reduce hosted-model calls; intermediate
+frames then use the latest valid homography. A failed detection also reuses the
+latest valid calibration for up to 15 frames.
 
 ## 1. Detect and calibrate the court
 
@@ -84,30 +85,31 @@ also produces centimeters; unit conversion happens only at the export boundary.
 
 ### Homography estimation
 
-For each checkpoint:
+For each calibration frame:
 
 1. Remove landmarks below a confidence threshold
-2. Require at least four non-collinear correspondences; use at least six
-   inliers for an accepted production calibration.
+2. Require at least four non-collinear correspondences and four RANSAC inliers.
 3. Optionally update an exponential moving average for each landmark's image position.
 4. Fit `court_to_image` using `cv2.findHomography` with RANSAC.
 5. Validate the result, then invert it to obtain `image_to_court` (to map player image pixel -> court positions).
 
 Estimate court-to-image first so the robust fitting threshold can use pixels.
 
-For RANSACE filtering, A calibration is accepted only if it has enough well-distributed inliers, is
-finite and invertible, and preserves court orientation. A failed checkpoint can reuse the last good calibration briefly. 
+For RANSAC filtering, a calibration is accepted only if it has enough inliers,
+is finite and invertible, and preserves court orientation. A failed frame can
+reuse the last good calibration briefly.
 
 Initial values to tune from debug footage:
 
 ```text
-checkpoint interval       5 frames
+checkpoint interval       1 frame
 court confidence          0.30
 keypoint confidence       0.50
-RANSAC threshold          5-6 px
-minimum inliers           6
-minimum inlier ratio      0.60
-maximum calibration age   10 frames
+RANSAC threshold          8 px
+minimum inliers           5
+minimum inlier ratio      0.45
+minimum court coverage    0.03
+maximum calibration age   15 frames
 ```
 
 ## 2. Project each player's floor position
@@ -299,7 +301,7 @@ Useful failure patterns:
 1. Pin model version, expected raw landmark schema, NBA geometry, and tests.
 2. Parse/densify raw keypoints and build matching image/court arrays.
 3. Implement stabilized RANSAC homography estimation and quality metrics.
-4. Add five-frame checkpoint, short hold, expiration, and cut reset behavior.
+4. Add per-frame calibration, short hold, expiration, and cut reset behavior.
 5. Project `PlayerObservation.footpoint_xy` and persist raw positions.
 6. Implement per-track jump removal, short-gap interpolation, and smoothing.
 7. Add original-frame reprojection and `sports.basketball` minimap videos.

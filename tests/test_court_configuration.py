@@ -64,10 +64,13 @@ class CourtCalibrationConfigurationTest(unittest.TestCase):
     def test_has_documented_production_defaults(self) -> None:
         configuration = CourtCalibrationConfiguration()
 
-        self.assertEqual(configuration.ransac_reprojection_threshold_px, 6.0)
-        self.assertEqual(configuration.minimum_inliers, 6)
-        self.assertEqual(configuration.minimum_inlier_ratio, 0.60)
-        self.assertEqual(configuration.maximum_calibration_age_frames, 10)
+        self.assertEqual(configuration.ransac_reprojection_threshold_px, 8.0)
+        self.assertEqual(configuration.minimum_correspondences, 4)
+        self.assertEqual(configuration.minimum_inliers, 5)
+        self.assertEqual(configuration.minimum_inlier_ratio, 0.45)
+        self.assertEqual(configuration.minimum_court_coverage_ratio, 0.03)
+        self.assertEqual(configuration.maximum_calibration_age_frames, 15)
+        self.assertEqual(configuration.landmark_smoothing_alpha, 1.0)
 
     def test_rejects_invalid_numerical_thresholds(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be positive"):

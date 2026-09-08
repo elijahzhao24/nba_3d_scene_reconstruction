@@ -93,9 +93,10 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
         observations = {item.track_id: item for item in pipeline.observations}
         self.assertEqual(observations[1].footpoint_xy, (19.5, 59))
         self.assertEqual(observations[1].detection_confidence, 0.9)
-        # A newly prompted track has no propagated mask until the next frame.
+        # A newly prompted track uses its detector box until SAM returns a mask.
         self.assertFalse(observations[2].visible)
-        self.assertIsNone(observations[2].footpoint_xy)
+        self.assertEqual(observations[2].footpoint_xy, (70.0, 60.0))
+        self.assertIn("bbox_footpoint_fallback", observations[2].quality_flags)
         self.assertEqual(observations[2].detection_confidence, 0.9)
 
         self.assertEqual(detector.calls, [0, 2])

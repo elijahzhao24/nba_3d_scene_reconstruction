@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import textwrap
 from typing import TYPE_CHECKING
 
 import cv2
@@ -23,7 +22,6 @@ TEXT = (236, 235, 230)
 MUTED = (166, 159, 147)
 DETECTED = (65, 215, 255)  # BGR: yellow
 REPROJECTED = (245, 220, 60)  # cyan
-INVALID = (110, 130, 250)
 
 
 def _text(canvas, value, xy, color=TEXT, scale=0.55, thickness=1):
@@ -105,8 +103,6 @@ def draw_source_overlay(
                   color, 0.45 * scale, thickness)
 
     for observation in observations:
-        if not observation.visible:
-            continue
         pixel = _pixel(observation.footpoint_xy, frame.shape)
         if pixel is None:
             continue
@@ -114,8 +110,6 @@ def draw_source_overlay(
         cv2.circle(result, pixel, size + thickness, (15, 15, 15), -1, cv2.LINE_AA)
         cv2.circle(result, pixel, size, color, -1, cv2.LINE_AA)
         cv2.drawMarker(result, pixel, TEXT, cv2.MARKER_CROSS, size, 1, cv2.LINE_AA)
-        _text(result, f"ID {observation.track_id}",
-              (pixel[0] + size * 2, pixel[1] + size), color, 0.6 * scale, thickness)
     return result
 
 
@@ -174,9 +168,6 @@ class CourtDebugRenderer:
             arc(2865 - 579 if right else 579, 762, 183, 0, 2 * math.pi)
             hoop = self.court_to_panel((2705 if right else 160, 762))
             cv2.circle(panel, hoop, 5, DETECTED, 2, cv2.LINE_AA)
-        _text(panel, "0, 0", (top_left[0], top_left[1] - 12), MUTED, 0.4)
-        _text(panel, "2865 cm  /  X", (bottom_right[0] - 112, top_left[1] - 12), MUTED, 0.4)
-        _text(panel, "1524 cm  /  Y", (top_left[0], bottom_right[1] + 22), MUTED, 0.4)
 
     def draw_birdseye(
         self,
@@ -194,23 +185,7 @@ class CourtDebugRenderer:
                for p in positions):
             raise ValueError("positions must match calibration segment/frame")
         panel = np.full((height, self.PANEL_WIDTH, 3), BACKGROUND, np.uint8)
-        _text(panel, "COURT / TOP DOWN", (32, 40), TEXT, 0.85, 2)
-        _text(panel, f"FRAME {calibration.frame_idx:05d}   |   {calibration.frame_idx / fps:.3f} s",
-              (32, 69), MUTED)
-        status_color = INVALID if not calibration.valid else (
-            DETECTED if calibration.source.value == "held" else (135, 219, 155)
-        )
-        _text(panel, calibration.source.value.upper(), (32, 109), status_color, 0.7, 2)
-        source = calibration.source_frame_idx
-        age = calibration.age_frames
-        _text(panel, f"Calibration frame: {source if source is not None else '--'}"
-              f"    Age: {age if age is not None else '--'} frames", (205, 108), MUTED)
-        error = '--' if calibration.median_error_px is None else f'{calibration.median_error_px:.2f}'
-        _text(panel, f"Inliers {calibration.inlier_count}/{calibration.keypoint_count}"
-              f"   |   Fit error {error} px   |   Coverage {calibration.court_coverage_ratio:.0%}",
-              (32, 143), MUTED, 0.5)
         self._court(panel)
-        plotted = 0
         if calibration.valid:
             for position in positions:
                 xy = position.raw_court_xy
@@ -224,19 +199,6 @@ class CourtDebugRenderer:
                 cv2.circle(panel, pixel, 11, BACKGROUND, -1, cv2.LINE_AA)
                 cv2.circle(panel, pixel, 8, color, -1, cv2.LINE_AA)
                 _text(panel, str(position.track_id), (pixel[0] + 13, pixel[1] + 5), TEXT, 0.6, 2)
-                plotted += 1
-        if not calibration.valid or plotted == 0:
-            message = "NO VALID CALIBRATION" if not calibration.valid else "NO PROJECTABLE PLAYERS"
-            cv2.rectangle(panel, (185, 360), (615, 405), BACKGROUND, -1)
-            _text(panel, message, (206, 390), status_color, 0.65, 2)
-        _text(panel, f"{plotted} projected / {len(positions)} tracked   |   Raw positions, centimeters",
-              (32, 622), TEXT, 0.52)
-        flags = tuple(dict.fromkeys(calibration.quality_flags + tuple(
-            flag for p in positions for flag in p.quality_flags
-        )))
-        reason = 'Flags: ' + (', '.join(flags) if flags else 'none')
-        for index, line in enumerate(textwrap.wrap(reason, width=87)[:3]):
-            _text(panel, line, (32, 650 + 20 * index), MUTED, 0.43)
         return panel
 
     def render(self, frame: np.ndarray, result: SceneFrame, *, fps: float) -> np.ndarray:
@@ -260,5 +222,10 @@ class CourtDebugRenderer:
         _text(left, "Cyan X: reprojected landmark   Colored +: player footpoint", (16, height - 15), REPROJECTED, 0.43)
         if result.court_detection is None:
             _text(left, "No raw keypoints for this frame", (16, 49 + source_height + 18), MUTED, 0.43)
-        right = self.draw_birdseye(result.positions, result.calibration, fps=fps, height=height)
+        right = self.draw_birdseye(
+            result.positions,
+            result.calibration,
+            fps=fps,
+            height=height,
+        )
         return np.concatenate((left, right), axis=1)

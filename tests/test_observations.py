@@ -44,6 +44,18 @@ class PlayerObservationsTest(unittest.TestCase):
         self.assertIsNone(observation.detection_confidence)
         self.assertIn("empty_mask", observation.quality_flags)
 
+    def test_missing_mask_uses_latest_detector_box_as_flagged_fallback(self):
+        observation, _ = self.build(
+            fallback_bboxes={1: (10.0, 20.0, 30.0, 60.0)},
+        )
+
+        self.assertFalse(observation.visible)
+        self.assertEqual(observation.bbox_xyxy, (10.0, 20.0, 30.0, 60.0))
+        self.assertEqual(observation.centroid_xy, (20.0, 40.0))
+        self.assertEqual(observation.footpoint_xy, (20.0, 60.0))
+        self.assertIn("mask_missing", observation.quality_flags)
+        self.assertIn("bbox_footpoint_fallback", observation.quality_flags)
+
     def test_rejects_wrong_frame_shape_and_fps(self):
         with self.assertRaisesRegex(ValueError, "frame_idx"):
             self.build((SamMaskPrediction(4, 1, np.ones((2, 2), bool)),))

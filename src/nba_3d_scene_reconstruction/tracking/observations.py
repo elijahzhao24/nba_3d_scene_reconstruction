@@ -8,7 +8,12 @@ from collections.abc import Iterable, Mapping
 import cv2
 import numpy as np
 
-from .schemas import ObservationSource, PlayerObservation, SamMaskPrediction
+from .schemas import (
+    BoundingBox,
+    ObservationSource,
+    PlayerObservation,
+    SamMaskPrediction,
+)
 
 
 def build_player_observations(
@@ -19,13 +24,16 @@ def build_player_observations(
     fps: float,
     track_ids: Iterable[int],
     detection_confidences: Mapping[int, float] | None = None,
+    fallback_bboxes: Mapping[int, BoundingBox | None] | None = None,
 ) -> tuple[PlayerObservation, ...]:
     """Emit one record per live track, including tracks without a current mask.
 
     Keep the largest connected component to discard detached mask noise. The
     footpoint is the median x of the lowest 5% of its height, at its bottom y.
     Boxes use exclusive right/bottom bounds; points use pixel coordinates.
-    No box fallback or previous-frame geometry is invented for missing masks.
+    If a live track has no usable mask, its most recent detector box supplies a
+    provisional bottom-center footpoint. The record remains marked missing so
+    downstream consumers can distinguish that fallback from current mask data.
     """
     if not segment_id or frame_idx < 0:
         raise ValueError("segment_id must not be empty and frame_idx must be non-negative")
@@ -74,6 +82,18 @@ def build_player_observations(
                     "mask_area": int(len(x)),
                 }
                 visible = True
+        if not visible:
+            fallback_bbox = (fallback_bboxes or {}).get(track_id)
+            if fallback_bbox is not None:
+                x1, y1, x2, y2 = fallback_bbox
+                if x2 > x1 and y2 > y1 and np.isfinite(fallback_bbox).all():
+                    geometry = {
+                        "bbox_xyxy": fallback_bbox,
+                        "centroid_xy": ((x1 + x2) / 2.0, (y1 + y2) / 2.0),
+                        "footpoint_xy": ((x1 + x2) / 2.0, y2),
+                        "mask_area": 0,
+                    }
+                    flags.append("bbox_footpoint_fallback")
         observations.append(PlayerObservation(
             segment_id=segment_id,
             frame_idx=frame_idx,

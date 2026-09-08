@@ -18,7 +18,7 @@ https://github.com/user-attachments/assets/a7482237-7b0e-4695-8338-80ef4f4b170a
 
 ## Tracking observations and court projection
 
-Run the models with court detection at frames `0, 5, 10, ...`:
+Run the models with court detection and a fresh homography attempt on every frame:
 
 ```bash
 uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
@@ -29,14 +29,18 @@ This writes a synchronized diagnostic video to
 `artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
 the source video with masks, IDs, player footpoints, detected court keypoints,
 and canonical landmarks reprojected through the homography. Its right side
-shows raw player dots and IDs on a fixed top-down court, plus calibration
-status, age, fit metrics, and quality flags.
+shows only raw player dots and IDs on a fixed top-down court. Calibration
+metrics remain available in `calibrations.jsonl` without cluttering the video.
 
 The command also writes four JSONL files under
 `artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
 `court_detections.jsonl`, `calibrations.jsonl`, and
 `player_court_positions_raw.jsonl`. The environment must configure both the
 player and court models as described in `.env.example`.
+
+Use `--court-interval 5` to reduce hosted court-model calls if per-frame
+calibration is too slow. Failed frames temporarily hold the most recent valid
+transform for up to 15 frames.
 
 SAM 2 stores video frames and tracking history in CPU RAM by default to leave
 GPU memory available for inference. Its model still runs on the GPU. CPU
@@ -51,18 +55,27 @@ SAM 2's internal state. On a GPU with more memory, a custom runner can pass
 records. Pass the video's actual `fps` when constructing the tracker (the
 standalone default is 30). Observations use the largest connected mask
 component and estimate the footpoint at the bottom, with x taken from the
-median of the lowest 5% of the component's height. Empty/absent masks produce
-missing observations; newly prompted checkpoint tracks remain missing until
-SAM returns a mask. Detection confidence is recorded only on frames where
-that track was matched or created by the detector. Mask-derived observations
-retain `sam2_propagation` provenance; checkpoint re-prompts affect subsequent
+median of the lowest 5% of the component's height. When a live track has an
+empty or absent mask, its latest detector box supplies a provisional
+bottom-center footpoint. The observation remains marked missing and carries a
+`bbox_footpoint_fallback` flag so downstream cleanup can treat it accordingly.
+Detection confidence is recorded only on frames where that track was matched
+or created by the detector. Mask-derived observations retain
+`sam2_propagation` provenance; checkpoint re-prompts affect subsequent
 propagation. Masks remain in memory and `mask_ref` is unset.
 
 `SceneReconstructionPipeline` joins those observations with per-frame
-calibrations and returns a `SceneFrame`. Between court checkpoints it holds
-the last valid calibration, with the existing ten-frame expiration limit.
+calibrations and returns a `SceneFrame`. Court detection runs every frame by
+default. When an interval is configured or a detection fails, it can hold the
+last valid calibration for up to 15 frames.
 Create a new tracking/scene pipeline per continuous segment; starting it
 resets calibration for that segment. Camera-cut detection is not automatic.
+
+The player detector defaults to confidence `0.66` and class-agnostic NMS at
+IoU `0.90`. Before a new track is created, the scene pipeline projects the
+detection's bottom-center point and rejects it when it falls beyond the
+configured 100 cm court margin. Existing SAM tracks can survive a brief missed
+detection, so this filter does not make short occlusions disappear.
 
 `court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
 in **centimeters**, plus the calibration source frame, age, and quality flags.

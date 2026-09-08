@@ -180,7 +180,8 @@ RF-DETR or SAM 2.
 
 - `ROBOFLOW_MODEL_ID`: fine-tuned RF-DETR deployment model ID;
 - `ROBOFLOW_API_KEY`: private key used to download the model weights;
-- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.67`;
+- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.66`;
+- `RFDETR_IOU_THRESHOLD`: class-agnostic NMS threshold, default `0.90`;
 - RF-DETR checkpoint interval, initially every five frames;
 - association score threshold and weights;
 - maximum missing frames;

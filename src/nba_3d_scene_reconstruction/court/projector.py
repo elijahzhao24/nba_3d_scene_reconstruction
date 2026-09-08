@@ -15,7 +15,8 @@ from .schemas import CourtCalibration, PlayerCourtPosition, Point
 class PlayerCourtProjector:
     """Preserve missing positions and calibration provenance without clamping.
 
-    A 100 cm margin permits players stepping just outside the playing surface.
+    A 100 cm margin permits players and provisional box anchors just outside
+    the playing surface.
     This is a raw floor-plane estimate; jumping/occlusion need later cleanup.
     """
 
@@ -34,6 +35,17 @@ class PlayerCourtProjector:
         self._minimum = points.min(axis=0) - court_margin_cm
         self._maximum = points.max(axis=0) + court_margin_cm
 
+    def contains_image_point(
+        self,
+        point: Point,
+        calibration: CourtCalibration,
+    ) -> bool:
+        """Return whether an image point projects within the court margin."""
+        if not calibration.valid or calibration.image_to_court is None:
+            return False
+        court_xy, failure = self._project_point(point, calibration.image_to_court)
+        return court_xy is not None and failure is None
+
     def project(
         self,
         observations: Iterable[PlayerObservation],
@@ -51,7 +63,7 @@ class PlayerCourtProjector:
                 flags.append("calibration_invalid")
             if not observation.visible:
                 flags.append("player_missing")
-            elif observation.footpoint_xy is None:
+            if observation.footpoint_xy is None:
                 flags.append("footpoint_missing")
             elif calibration.valid and calibration.image_to_court is not None:
                 court_xy, failure = self._project_point(

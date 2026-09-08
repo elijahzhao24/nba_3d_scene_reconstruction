@@ -40,16 +40,19 @@ class PlayerCourtProjectorTest(unittest.TestCase):
         self.assertEqual(position.calibration_age_frames, 3)
 
     def test_missing_player_footpoint_and_expired_calibration(self):
+        missing_but_projected = self.project(replace(self.observation, visible=False))
+        self.assertIsNotNone(missing_but_projected.raw_court_xy)
+        self.assertIn("player_missing", missing_but_projected.quality_flags)
         for observation, flag in (
-            (replace(self.observation, visible=False), "player_missing"),
+            (replace(self.observation, visible=False, footpoint_xy=None), "player_missing"),
             (replace(self.observation, footpoint_xy=None), "footpoint_missing"),
             (replace(self.observation, footpoint_xy=(float("nan"), 1)), "invalid_footpoint"),
         ):
             position = self.project(observation)
             self.assertIsNone(position.raw_court_xy)
             self.assertIn(flag, position.quality_flags)
-        expired = self.calibrator.current(segment_id="segment-1", frame_idx=11)
-        position = self.project(replace(self.observation, frame_idx=11), expired)
+        expired = self.calibrator.current(segment_id="segment-1", frame_idx=31)
+        position = self.project(replace(self.observation, frame_idx=31), expired)
         self.assertIsNone(position.raw_court_xy)
         self.assertIn("calibration_expired", position.quality_flags)
 
@@ -63,6 +66,21 @@ class PlayerCourtProjectorTest(unittest.TestCase):
         position = self.project(replace(self.observation, footpoint_xy=(-101, 0)), identity)
         self.assertIsNone(position.raw_court_xy)
         self.assertIn("outside_court", position.quality_flags)
+
+    def test_checks_image_point_against_calibrated_court(self):
+        inside = project_points(
+            np.asarray([[1000.0, 700.0]]), KNOWN_COURT_TO_IMAGE,
+        )[0]
+        outside = project_points(
+            np.asarray([[1000.0, -200.0]]), KNOWN_COURT_TO_IMAGE,
+        )[0]
+
+        self.assertTrue(
+            self.projector.contains_image_point(tuple(inside), self.calibration)
+        )
+        self.assertFalse(
+            self.projector.contains_image_point(tuple(outside), self.calibration)
+        )
 
     def test_rejects_cross_frame_or_segment_join(self):
         for observation in (replace(self.observation, frame_idx=1),

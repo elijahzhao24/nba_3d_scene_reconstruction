@@ -125,6 +125,7 @@ def run_tracking_demo(
     max_frames: int | None = None,
     skip_frame_extraction: int = 0,
     court_projection: bool = False,
+    court_interval: int = 1,
 ) -> Path:
     """Ingest one video, run the real models, and render an overlay video."""
     if not skip_frame_extraction:
@@ -141,6 +142,7 @@ def run_tracking_demo(
         pipeline = SceneReconstructionPipeline(
             tracking_pipeline=pipeline,
             court_detector=RoboflowCourtDetector(),
+            court_detector_interval=court_interval,
         )
 
     if output_path is None:
@@ -183,8 +185,14 @@ def main() -> None:
     parser.add_argument(
         "--court-projection",
         action="store_true",
-        help=("Detect/calibrate the court every five frames, save raw records, "
+        help=("Detect/calibrate the court, save raw records, "
               "and render a synchronized top-down court"),
+    )
+    parser.add_argument(
+        "--court-interval",
+        type=int,
+        default=1,
+        help="Run court detection every N frames (default: every frame)",
     )
     parser.add_argument(
         "--skip-frame-extraction",
@@ -200,6 +208,7 @@ def main() -> None:
         max_frames=args.max_frames,
         skip_frame_extraction = args.skip_frame_extraction,
         court_projection=args.court_projection,
+        court_interval=args.court_interval,
     )
     print(f"Debug video written to {output}")
 

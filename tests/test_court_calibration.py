@@ -153,7 +153,7 @@ class CourtHomographyEstimatorTest(unittest.TestCase):
 
     def test_rejects_insufficient_and_collinear_correspondences(self) -> None:
         insufficient = CourtHomographyEstimator().estimate(
-            synthetic_detection(included_ids=(0, 1, 2, 3, 4))
+            synthetic_detection(included_ids=(0, 1, 2))
         )
         collinear = CourtHomographyEstimator().estimate(
             synthetic_detection(included_ids=(0, 1, 2, 3, 4, 5))
@@ -180,7 +180,7 @@ class CourtHomographyEstimatorTest(unittest.TestCase):
 
     def test_rejects_low_inlier_count_and_ratio(self) -> None:
         inliers = np.zeros((33, 1), dtype=np.uint8)
-        inliers[:5] = 1
+        inliers[:3] = 1
         with patch(
             "nba_3d_scene_reconstruction.court.calibration.cv2.findHomography",
             return_value=(KNOWN_COURT_TO_IMAGE.copy(), inliers),
@@ -190,6 +190,22 @@ class CourtHomographyEstimatorTest(unittest.TestCase):
         self.assertFalse(estimate.valid)
         self.assertIn("insufficient_inliers", estimate.quality_flags)
         self.assertIn("low_inlier_ratio", estimate.quality_flags)
+
+    def test_accepts_six_well_spread_inliers_out_of_twelve(self) -> None:
+        included_ids = (0, 5, 9, 17, 27, 32, 1, 4, 12, 20, 24, 30)
+        inliers = np.zeros((12, 1), dtype=np.uint8)
+        inliers[:6] = 1
+        with patch(
+            "nba_3d_scene_reconstruction.court.calibration.cv2.findHomography",
+            return_value=(KNOWN_COURT_TO_IMAGE.copy(), inliers),
+        ):
+            estimate = CourtHomographyEstimator().estimate(
+                synthetic_detection(included_ids=included_ids)
+            )
+
+        self.assertTrue(estimate.valid)
+        self.assertEqual(estimate.inlier_ratio, 0.5)
+        self.assertIn("ransac_outliers", estimate.quality_flags)
 
     def test_rejects_singular_homography(self) -> None:
         with patch(

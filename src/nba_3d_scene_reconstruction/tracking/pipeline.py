@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
 from typing import Any
 
 from .association_engine import PlayerAssociationEngine
@@ -53,20 +54,24 @@ class PlayerTrackingPipeline:
         self,
         frame: Any,
         frame_idx: int,
+        *,
+        detection_filter: Callable[[PlayerDetection], bool] | None = None,
     ) -> tuple[SamMaskPrediction, ...]:
         """Process one frame; frames must arrive sequentially starting at zero."""
         self._validate_next_frame(frame_idx)
         self._frame_detection_confidences = {}
 
         if frame_idx == 0:
-            self._initialize_players(frame)
+            self._initialize_players(frame, detection_filter)
             masks = self._known_masks(self.sam_tracker.propagate_frame(frame_idx))
         else:
             masks = self._known_masks(self.sam_tracker.propagate_frame(frame_idx))
             self._update_track_visibility(masks, frame_idx)
 
             if frame_idx % self.detector_interval == 0:
-                self._run_detector_checkpoint(frame, frame_idx, masks)
+                self._run_detector_checkpoint(
+                    frame, frame_idx, masks, detection_filter,
+                )
 
         self.observations = build_player_observations(
             masks,
@@ -75,12 +80,22 @@ class PlayerTrackingPipeline:
             fps=self.fps,
             track_ids=self.track_manager.tracks,
             detection_confidences=self._frame_detection_confidences,
+            fallback_bboxes={
+                track_id: track.latest_bbox_xyxy
+                for track_id, track in self.track_manager.tracks.items()
+            },
         )
         self._last_frame_idx = frame_idx
         return masks
 
-    def _initialize_players(self, frame: Any) -> None:
-        detections = self.detector.detect(frame, frame_idx=0)
+    def _initialize_players(
+        self,
+        frame: Any,
+        detection_filter: Callable[[PlayerDetection], bool] | None,
+    ) -> None:
+        detections = self._filter_detections(
+            self.detector.detect(frame, frame_idx=0), detection_filter,
+        )
         for detection in detections:
             self._create_and_prompt_track(detection)
 
@@ -89,8 +104,11 @@ class PlayerTrackingPipeline:
         frame: Any,
         frame_idx: int,
         masks: tuple[SamMaskPrediction, ...],
+        detection_filter: Callable[[PlayerDetection], bool] | None,
     ) -> None:
-        detections = self.detector.detect(frame, frame_idx)
+        detections = self._filter_detections(
+            self.detector.detect(frame, frame_idx), detection_filter,
+        )
         result = self.association_engine.associate(
             detections=detections,
             sam_masks=masks,
@@ -123,6 +141,19 @@ class PlayerTrackingPipeline:
             detection.frame_idx,
             track.track_id,
             detection.bbox_xyxy,
+        )
+
+    @staticmethod
+    def _filter_detections(
+        detections: tuple[PlayerDetection, ...],
+        detection_filter: Callable[[PlayerDetection], bool] | None,
+    ) -> tuple[PlayerDetection, ...]:
+        if detection_filter is None:
+            return detections
+        return tuple(
+            detection
+            for detection in detections
+            if detection_filter(detection)
         )
 
     def _known_masks(
@@ -164,3 +195,7 @@ class PlayerTrackingPipeline:
             raise ValueError(
                 f"expected frame {expected_frame_idx}, received frame {frame_idx}"
             )
+
+    def validate_next_frame(self, frame_idx: int) -> None:
+        """Validate ordering before another subsystem performs frame work."""
+        self._validate_next_frame(frame_idx)
