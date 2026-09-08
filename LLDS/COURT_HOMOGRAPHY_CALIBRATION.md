@@ -17,7 +17,7 @@ The court model and player tracker solve different parts of this:
 ```text
 Video frame
     |
-    +--> every K frames: court keypoint detection
+    +--> every frame by default: court keypoint detection
     |          |
     |          v
     |     validate landmark schema and confidence
@@ -46,9 +46,10 @@ Video frame
         saved positions + debug court video + Three.js output
 ```
 
-The MVP runs court inference on frame `0` and every fifth frame. Intermediate
-frames use the latest valid homography. If camera motion makes that visibly
-lag, optical flow can update the landmarks between model checkpoints later.
+The MVP runs court inference on every frame so pans and zooms receive a fresh
+homography. `--court-interval N` can reduce hosted-model calls; intermediate
+frames then use the latest valid homography. A failed detection also reuses the
+latest valid calibration for up to 15 frames.
 
 ## 1. Detect and calibrate the court
 
@@ -57,12 +58,6 @@ lag, optical flow can update the landmarks between model checkpoints later.
 The detector returns one parent prediction with class `court`. Its 33 court
 landmarks are nested inside that prediction; they are not separate object
 detections.
-
-The reference notebook uses `basketball-court-detection-2/14`, while this
-project currently targets `/22`. The model ID, expected landmark labels, court
-geometry, and geometry-source revision must be pinned together. Before using a
-new model version, run one raw inference and verify its 33 landmark labels and
-order.
 
 The expected label order is:
 
@@ -82,44 +77,40 @@ court object, not each landmark. Therefore:
 - apply the identical confidence mask to detected image points and canonical
   court vertices.
 
-`sports.basketball.CourtConfiguration` supplies the canonical NBA geometry.
-Its coordinate plane is 94 by 50 feet, with `x` running between baselines and
-`y` running between sidelines.
+The checked-in landmarks mirror the canonical NBA geometry from
+`sports.basketball.CourtConfiguration`, but store it in centimeters. Its
+coordinate plane is 2865 by 1524 centimeters, with `x` running between
+baselines and `y` running between sidelines. Consequently, `image_to_court`
+also produces centimeters; unit conversion happens only at the export boundary.
 
 ### Homography estimation
 
-For each checkpoint:
+For each calibration frame:
 
-1. Keep finite landmarks above the keypoint-confidence threshold.
-2. Require at least four non-collinear correspondences; use at least six
-   inliers for an accepted production calibration.
-3. Optionally update an exponential moving average for each landmark's image
-   position. A starting `alpha` of `0.25` favors stability; increase it if the
-   calibration lags camera pans.
-4. Fit `court_to_image` using `cv2.findHomography` with RANSAC or MAGSAC.
-5. Measure inlier reprojection error in image pixels.
-6. Validate the result, then invert it to obtain `image_to_court`.
+1. Remove landmarks below a confidence threshold
+2. Require at least four non-collinear correspondences and four RANSAC inliers.
+3. Optionally update an exponential moving average for each landmark's image position.
+4. Fit `court_to_image` using `cv2.findHomography` with RANSAC.
+5. Validate the result, then invert it to obtain `image_to_court` (to map player image pixel -> court positions).
 
-Estimate court-to-image first so the robust fitting threshold has the useful
-unit of pixels. Do not average the nine homography matrix entries directly: a
-homography is scale-ambiguous and element-wise smoothing can distort the
-projection.
+Estimate court-to-image first so the robust fitting threshold can use pixels.
 
-A calibration is accepted only if it has enough well-distributed inliers, is
-finite and invertible, preserves court orientation, and has low reprojection
-error. A failed checkpoint can reuse the last good calibration briefly. A
-broadcast cut resets all calibration state immediately.
+For RANSAC filtering, a calibration is accepted only if it has enough inliers,
+is finite and invertible, and preserves court orientation. A failed frame can
+reuse the last good calibration briefly.
 
 Initial values to tune from debug footage:
 
 ```text
-checkpoint interval       5 frames
+checkpoint interval       1 frame
 court confidence          0.30
 keypoint confidence       0.50
-RANSAC threshold          5-6 px
-minimum inliers           6
-minimum inlier ratio      0.60
-maximum calibration age   10 frames
+landmark EMA alpha        0.25
+RANSAC threshold          8 px
+minimum inliers           5
+minimum inlier ratio      0.45
+minimum court coverage    0.03
+maximum calibration age   15 frames
 ```
 
 ## 2. Project each player's floor position
@@ -138,17 +129,15 @@ point = np.array([[[u, v]]], dtype=np.float32)
 court_xy = cv2.perspectiveTransform(point, H)[0, 0]
 ```
 
-Reject non-finite results and positions outside the court plus a small margin.
-The homography maps only the floor plane: it must not be used as the 3D
-position of a head, hand, jumping player, or airborne ball.
+Reject positions outside the court plus a small margin.
+The homography maps only the floor plane, so it should not be used to predict the 3d position of something off the ground (head, hand, jumping player, basketball)
 
-If court coordinates are stored in feet, convert them to centered Three.js
-meters with:
+Convert court coordinates from centimeters to centered Three.js meters with:
 
 ```python
-world_x = court_x_ft * 0.3048 - 14.325
+world_x = court_x_cm * 0.01 - 14.325
 world_y = 0.0
-world_z = court_y_ft * 0.3048 - 7.620
+world_z = court_y_cm * 0.01 - 7.620
 ```
 
 The projection must record the calibration frame and age used. If no valid
@@ -166,8 +155,7 @@ Use two separate cleanup layers.
 - Hold the last good calibration across a short detection failure.
 - Reset landmark filters and homography state on a camera cut.
 
-This corrects movement shared by every projected player. If all players jump
-in the same direction on the same frame, calibration is the likely cause.
+This corrects movement shared by every projected player. 
 
 ### Per-player path cleanup
 
@@ -175,20 +163,23 @@ After projection, group positions by `track_id` and process each continuous
 track independently:
 
 1. Calculate frame-to-frame court speed.
-2. Detect "teleports" using a robust threshold such as median speed plus a
+2. Detect "teleports" using a threshold such as median speed plus a
    multiple of median absolute deviation.
-3. Mark short suspicious runs as missing and pad their boundaries slightly.
+3. Mark suspicious frames as 'missing'. Pad their boundries by removing a small number of neighboring frames as well.
 4. Linearly interpolate only short gaps with valid positions on both sides.
 5. Apply a light Savitzky-Golay filter independently to court `x` and `y`.
 
-The reference notebook uses starting values equivalent to a nine-frame,
-second-order Savitzky-Golay filter after jump removal. This is an offline
-centered filter and uses roughly four future frames. For live output, replace
-it with a causal EMA, One Euro filter, or Kalman filter.
+Defaults match the reference notebook: `jump_sigma=3.5`, minimum jump distance
+`18.288 cm` (the notebook's `0.6 ft`), maximum short jump run `18`, two frames
+of padding, and a nine-frame, second-order Savitzky-Golay filter after
+jump/suspicious-frame removal. This is an offline centered filter and uses
+roughly four future frames.
 
-Never smooth across camera cuts, retired/reassigned track IDs, or long missing
-intervals. Preserve both raw and cleaned positions so smoothing can be tuned
+Never smooth across retired/reassigned track IDs, or long missing
+intervals. Preserve raw and cleaned positions so smoothing can be tuned
 without rerunning the models.
+
+If a live output is added, replace smoothing  with a causal EMA, One Euro filter, or Kalman filter.
 
 ## Runtime ownership
 
@@ -205,7 +196,6 @@ src/nba_3d_scene_reconstruction/court/
 
 A segment-level pipeline runs player tracking and court calibration against
 the same original frame and joins their results by `(segment_id, frame_idx)`.
-The player tracker must not call the court detector directly.
 
 Minimal control flow:
 
@@ -269,7 +259,7 @@ artifacts/<clip_id>/<segment_id>/
 Write calibration records for detected, held, and invalid frames. Flatten
 NumPy matrices only when serializing them.
 
-## Debugging with `sports.basketball`
+## Birds eye court debug with `sports.basketball`
 
 Use `CourtConfiguration`, `draw_court`, and `draw_points_on_court` to render a
 canonical NBA minimap with tracker IDs:
@@ -315,13 +305,8 @@ Useful failure patterns:
 1. Pin model version, expected raw landmark schema, NBA geometry, and tests.
 2. Parse/densify raw keypoints and build matching image/court arrays.
 3. Implement stabilized RANSAC homography estimation and quality metrics.
-4. Add five-frame checkpoint, short hold, expiration, and cut reset behavior.
+4. Add per-frame calibration, short hold, expiration, and cut reset behavior.
 5. Project `PlayerObservation.footpoint_xy` and persist raw positions.
 6. Implement per-track jump removal, short-gap interpolation, and smoothing.
 7. Add original-frame reprojection and `sports.basketball` minimap videos.
 8. Tune thresholds on clips containing pans, zooms, occlusion, and cuts.
-
-The MVP is complete when every saved player position is traceable to a valid
-calibration, invalid frames do not fabricate coordinates, raw and cleaned paths
-are both reproducible, and the debug render can identify whether an error came
-from calibration or player tracking.

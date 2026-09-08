@@ -16,7 +16,9 @@ else:
     ImageInput = object
 
 
-DEFAULT_CONFIDENCE_THRESHOLD = 0.4
+DEFAULT_CONFIDENCE_THRESHOLD = 0.66
+DEFAULT_IOU_THRESHOLD = 0.9
+
 # Discard non player classes in our fine-tuned model
 PLAYER_CLASSES = frozenset(
     {
@@ -55,6 +57,8 @@ class _InferenceModel(Protocol):
         image: ImageInput,
         *,
         confidence: float,
+        iou_threshold: float,
+        class_agnostic_nms: bool,
     ) -> Sequence[_InferenceResponse]: ...
 
 
@@ -82,6 +86,7 @@ class RoboflowPlayerDetector:
         model_id: str | None = None,
         *,
         confidence_threshold: float | None = None,
+        iou_threshold: float | None = None,
         player_classes: Iterable[str] = PLAYER_CLASSES,
         model: _InferenceModel | None = None,
     ) -> None:
@@ -98,8 +103,18 @@ class RoboflowPlayerDetector:
             )
         if not 0.0 <= confidence_threshold <= 1.0:
             raise ValueError("confidence_threshold must be between 0 and 1")
+        if iou_threshold is None:
+            configured_iou = os.environ.get("RFDETR_IOU_THRESHOLD")
+            iou_threshold = (
+                float(configured_iou)
+                if configured_iou is not None
+                else DEFAULT_IOU_THRESHOLD
+            )
+        if not 0.0 <= iou_threshold <= 1.0:
+            raise ValueError("iou_threshold must be between 0 and 1")
 
         self.confidence_threshold = confidence_threshold
+        self.iou_threshold = iou_threshold
         self.player_classes = frozenset(player_classes)
         if not self.player_classes:
             raise ValueError("player_classes must contain at least one class")
@@ -127,6 +142,8 @@ class RoboflowPlayerDetector:
         responses = self.model.infer(
             image,
             confidence=self.confidence_threshold,
+            iou_threshold=self.iou_threshold,
+            class_agnostic_nms=True,
         )
         if not responses:
             return ()

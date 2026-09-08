@@ -16,6 +16,88 @@ https://github.com/user-attachments/assets/a7482237-7b0e-4695-8338-80ef4f4b170a
 
 **Visalize to Three.js (WIP)**
 
+## Tracking observations and court projection
+
+Run the models with court detection and a fresh homography attempt on every frame:
+
+```bash
+uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
+  --court-projection --max-frames 60
+```
+
+This writes a synchronized diagnostic video to
+`artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
+the source video with masks, IDs, player footpoints, detected court keypoints,
+and canonical landmarks reprojected through the homography. Its right side
+shows cleaned player dots and IDs on a fixed top-down court. Calibration
+metrics remain available in `calibrations.jsonl` without cluttering the video.
+
+The command also writes five JSONL files under
+`artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
+`court_detections.jsonl`, `calibrations.jsonl`, and
+`player_court_positions_raw.jsonl`, plus
+`player_court_positions_clean.jsonl`. Raw positions remain available for
+diagnosis and smoothing retuning. The environment must configure both the
+player and court models as described in `.env.example`.
+
+Use `--court-interval 5` to reduce hosted court-model calls if per-frame
+calibration is too slow. Failed frames temporarily hold the most recent valid
+transform for up to 15 frames.
+
+SAM 2 stores video frames and tracking history in CPU RAM by default to leave
+GPU memory available for inference. Its model still runs on the GPU. CPU
+storage can slow processing and increases host-memory use; it does not change
+the output resolution or playback FPS. Retired tracks are also removed from
+SAM 2's internal state. On a GPU with more memory, a custom runner can pass
+`offload_video_to_cpu=False` and/or `offload_state_to_cpu=False` to
+`Sam2PlayerTracker`.
+
+`PlayerTrackingPipeline.process_frame()` still returns masks; its
+`observations` attribute contains the latest frame's `PlayerObservation`
+records. Pass the video's actual `fps` when constructing the tracker (the
+standalone default is 30). Observations use the largest connected mask
+component and estimate the footpoint at the bottom, with x taken from the
+median of the lowest 5% of the component's height. When a live track has an
+empty or absent mask, its latest detector box supplies a provisional
+bottom-center footpoint. The observation remains marked missing and carries a
+`bbox_footpoint_fallback` flag so downstream cleanup can treat it accordingly.
+Detection confidence is recorded only on frames where that track was matched
+or created by the detector. Mask-derived observations retain
+`sam2_propagation` provenance; checkpoint re-prompts affect subsequent
+propagation. Masks remain in memory and `mask_ref` is unset.
+
+`SceneReconstructionPipeline` joins those observations with per-frame
+calibrations and returns a `SceneFrame`. Court detection runs every frame by
+default. When an interval is configured or a detection fails, it can hold the
+last valid calibration for up to 15 frames.
+Create a new tracking/scene pipeline per continuous segment; starting it
+resets calibration for that segment. Camera-cut detection is not automatic.
+
+The player detector defaults to confidence `0.66` and class-agnostic NMS at
+IoU `0.90`. It accepts the five player/action class names and excludes number,
+ball, referee, and rim classes. New detections must project within 30 cm of the
+court, appear at two consecutive detector checkpoints, and fit under the
+10-player live-track cap. Overlapping unmatched boxes at IoU `0.85` are treated
+as duplicate class predictions. Existing good SAM masks are only re-prompted
+when their association score falls below `0.75`.
+
+SAM masks receive the reference notebook's detached-component cleanup: keep
+the largest region and regions whose edge is within `0.03` of the image
+diagonal. A propagated mask farther than 100 cm outside the court is treated
+as missing and retires under the normal missing-track timeout.
+
+`court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
+and `clean_court_xy` in **centimeters**, plus the calibration source frame,
+age, and quality flags.
+Invalid calibration, missing footpoints, projection at infinity, and positions
+outside the court plus a configurable 100 cm margin produce a null position.
+Court landmarks use an aggressive EMA (`alpha=0.25`) before homography fitting.
+After projection, trajectories use robust speed filtering (`jump_sigma=3.5`,
+minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
+interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
+centered, so the minimap is replaced with cleaned positions in a lightweight
+second render pass after inference. Three.js export remains a future step.
+
 ## Summary
 
 The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.
@@ -199,155 +281,28 @@ The pipeline should keep coordinate spaces explicit:
 | Local skeleton space | Root-relative 3D pose, usually pelvis-relative. This describes body shape but not global court location. |
 | Rig bone space | Bone-local rotations for the generic humanoid model. This is the compact form the viewer needs for animation. |
 
-### High-Level Internal Data Schema
+### Composable Processing State
 
-The inference pipeline should keep a processing schema. This schema stores raw model
-outputs, confidence values, calibration data, intermediate references, cleaned
-states, and manual annotations. It will be useful for debugging and reprocessing.
+The backend should not accumulate every intermediate result in one large DTO.
+Each subproblem should own typed records and, where useful, a store tailored to
+its lifecycle. For example, tracking owns records such as `PlayerObservation`
+and its track history, while court calibration owns court detections,
+homographies, and calibration quality. Pose reconstruction, team assignment,
+and ball annotation can follow the same pattern without depending on one
+shared schema that must change whenever a subsystem changes.
 
+The main pipeline composes these subsystem processors and stores. It coordinates
+them using small stable identifiers such as `clip_id`, `segment_id`,
+`frame_idx`, and `track_id`, but it does not take ownership of all their
+internal state. This keeps raw observations, derived values, confidence data,
+and cleaned results close to the code that understands them, while still
+allowing stages to be debugged or reprocessed independently.
 
-```json
-{
-  "schema_version": "1.0",
-  "clip": {
-    "clip_id": "clip_001",
-    "source_uri": "uploads/clip_001.mp4",
-    "fps": 29.97,
-    "frame_count": 420,
-    "width": 1920,
-    "height": 1080
-  },
-  "segments": [
-    {
-      "segment_id": "segment_001",
-      "start_frame": 0,
-      "end_frame": 419,
-      "camera_view": "broadcast_side"
-    }
-  ],
-  "court": {
-    "units": "meters",
-    "up_axis": "Y",
-    "floor_axes": ["X", "Z"],
-    "length": 28.65,
-    "width": 15.24,
-    "landmarks": [
-      {
-        "landmark_id": 0,
-        "name": "court_corner_left_baseline",
-        "position": [-14.325, 0.0, -7.62]
-      }
-    ]
-  },
-  "teams": [
-    {
-      "team_id": 0,
-      "display_color": "#e5484d",
-      "embedding_centroid_ref": "embeddings/team_0.npy"
-    },
-    {
-      "team_id": 1,
-      "display_color": "#3b82f6",
-      "embedding_centroid_ref": "embeddings/team_1.npy"
-    }
-  ],
-  "tracks": [
-    {
-      "track_id": 7,
-      "role": "player",
-      "start_frame": 14,
-      "end_frame": 419,
-      "team_id": 0,
-      "team_confidence": 0.96,
-      "appearance_embedding_ref": "embeddings/tracks/7.npy"
-    }
-  ],
-  "frames": [
-    {
-      "frame_index": 120,
-      "timestamp_seconds": 4.004,
-      "camera": {
-        "segment_id": "segment_001",
-        "homography_image_to_court": [
-          [0.021, -0.004, -8.42],
-          [0.001, 0.018, -5.31],
-          [0.00001, -0.00002, 1.0]
-        ],
-        "calibration_confidence": 0.92,
-        "reprojection_error": 2.7
-      },
-      "players": [
-        {
-          "track_id": 7,
-          "observation": {
-            "bbox_xyxy": [822, 315, 946, 708],
-            "detection_confidence": 0.96,
-            "tracking_confidence": 0.91,
-            "mask_ref": "masks/120/7.rle"
-          },
-          "grounding": {
-            "image_footpoint": [873.2, 694.8],
-            "footpoint_source": "ankle_midpoint",
-            "court_position": [8.21, 0.0, -3.44],
-            "court_velocity": [1.18, 0.0, 0.35]
-          },
-          "pose_2d": {
-            "skeleton": "coco17",
-            "keypoints": [
-              {
-                "joint": "left_shoulder",
-                "position": [854.2, 397.7],
-                "confidence": 0.94
-              }
-            ]
-          },
-          "pose_3d_local": {
-            "root_joint": "pelvis",
-            "joints": [
-              {
-                "joint": "left_shoulder",
-                "position": [-0.20, 0.57, 0.02],
-                "confidence": 0.88
-              }
-            ]
-          },
-          "world_transform": {
-            "root_position": [8.21, 0.0, -3.44],
-            "root_rotation_xyzw": [0.0, 0.707, 0.0, 0.707]
-          },
-          "rig_pose": {
-            "bone_rotations_xyzw": {
-              "Hips": [0.0, 0.0, 0.0, 1.0],
-              "LeftUpperArm": [0.14, -0.21, 0.04, 0.96]
-            }
-          },
-          "quality": {
-            "pose_valid": true,
-            "court_position_valid": true,
-            "interpolated": false,
-            "occlusion_score": 0.18
-          }
-        }
-      ]
-    }
-  ],
-  "ball_annotations": [
-    {
-      "event_id": "ball_evt_001",
-      "type": "pass",
-      "start_frame": 150,
-      "end_frame": 171,
-      "from_track_id": 7,
-      "to_track_id": 12,
-      "control_points": [
-        [8.21, 1.8, -3.44],
-        [4.10, 2.6, -1.20],
-        [1.05, 1.6, 0.80]
-      ]
-    }
-  ]
-}
-```
+At the output boundary, a dedicated export step reads the required records from
+the composed stores, joins them, validates coordinate conversions, and
+sanitizes them into the compact Three.js animation schema below. The viewer DTO
+is therefore a deliberate presentation format rather than the pipeline's
+internal source of truth.
 
 ### Three.js Animation Schema
 

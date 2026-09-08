@@ -2,15 +2,63 @@
 
 from __future__ import annotations
 
+import math
 import os
 from typing import Any
 
+import cv2
 import numpy as np
 
 from .schemas import BoundingBox, SamMaskPrediction
 
-
 SAM2_MODEL_ID = "facebook/sam2.1-hiera-small"
+DEFAULT_MASK_COMPONENT_RELATIVE_DISTANCE = 0.03
+
+
+def filter_mask_segments_by_distance(
+    mask: np.ndarray,
+    *,
+    relative_distance: float = DEFAULT_MASK_COMPONENT_RELATIVE_DISTANCE,
+) -> np.ndarray:
+    """Remove mask islands far from the largest connected component.
+
+    This mirrors the reference notebook's
+    ``filter_segments_by_distance(..., relative_distance=0.03, mode="edge")``
+    call without making Supervision a runtime dependency.
+    """
+    if mask.ndim != 2 or mask.dtype != np.bool_:
+        raise ValueError("mask must be a two-dimensional boolean array")
+    if not 0.0 <= relative_distance <= 1.0:
+        raise ValueError("relative_distance must be between 0 and 1")
+    if not mask.any():
+        return mask.copy()
+
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        mask.astype(np.uint8),
+        connectivity=8,
+    )
+    if count <= 2:
+        return mask.copy()
+
+    main_label = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    maximum_distance = relative_distance * math.hypot(*mask.shape)
+    distance_from_main = cv2.distanceTransform(
+        (labels != main_label).astype(np.uint8),
+        cv2.DIST_L2,
+        3,
+    )
+    keep_labels = np.zeros(count, dtype=bool)
+    keep_labels[main_label] = True
+    for label in range(1, count):
+        if label == main_label:
+            continue
+        component = labels == label
+        if (
+            component.any()
+            and float(distance_from_main[component].min()) <= maximum_distance
+        ):
+            keep_labels[label] = True
+    return keep_labels[labels]
 
 
 def _load_predictor() -> Any:
@@ -27,9 +75,13 @@ class Sam2PlayerTracker:
         self,
         *,
         predictor: Any | None = None,
+        offload_video_to_cpu: bool = True,
+        offload_state_to_cpu: bool = True,
     ) -> None:
         # Passing a predictor is only needed by tests. Production uses SAM 2.
         self.predictor = predictor or _load_predictor()
+        self.offload_video_to_cpu = offload_video_to_cpu
+        self.offload_state_to_cpu = offload_state_to_cpu
         self._state: object | None = None
         self._track_ids: set[int] = set()
 
@@ -43,8 +95,22 @@ class Sam2PlayerTracker:
         if self._state is not None:
             self.predictor.reset_state(self._state)
 
-        self._state = self.predictor.init_state(os.fspath(frames_dir))
+        # SAM's defaults retain the whole resized video and tracking history on
+        # the GPU. Store them in host RAM so longer clips leave room for inference.
+        self._state = self.predictor.init_state(
+            os.fspath(frames_dir),
+            offload_video_to_cpu=self.offload_video_to_cpu,
+            offload_state_to_cpu=self.offload_state_to_cpu,
+        )
         self._track_ids.clear()
+
+    def remove_player(self, track_id: int) -> None:
+        """Release a retired object's SAM history without recomputing old masks."""
+        state = self._require_state()
+        if track_id not in self._track_ids:
+            return
+        self.predictor.remove_object(state, obj_id=track_id, need_output=False)
+        self._track_ids.remove(track_id)
 
     # Existing ID's added to a set has no effect.
     # so prompt_player works for both addition and corrections
@@ -97,7 +163,7 @@ class Sam2PlayerTracker:
                 SamMaskPrediction(
                     frame_idx=output_frame_idx,
                     track_id=int(track_id),
-                    mask=masks[index, 0] > 0.0,
+                    mask=filter_mask_segments_by_distance(masks[index, 0] > 0.0),
                 )
                 for index, track_id in enumerate(object_ids)
             )

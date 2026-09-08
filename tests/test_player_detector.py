@@ -36,15 +36,19 @@ class FakeResponse:
 class FakeModel:
     def __init__(self, responses: tuple[FakeResponse, ...]) -> None:
         self.responses = responses
-        self.calls: list[tuple[object, float]] = []
+        self.calls: list[tuple[object, float, float, bool]] = []
 
     def infer(
         self,
         image: object,
         *,
         confidence: float,
+        iou_threshold: float,
+        class_agnostic_nms: bool,
     ) -> tuple[FakeResponse, ...]:
-        self.calls.append((image, confidence))
+        self.calls.append(
+            (image, confidence, iou_threshold, class_agnostic_nms)
+        )
         return self.responses
 
 
@@ -80,7 +84,7 @@ class RoboflowPlayerDetectorTest(unittest.TestCase):
 
         detections = detector.detect("frame.jpg", frame_idx=12)
 
-        self.assertEqual(model.calls, [("frame.jpg", 0.5)])
+        self.assertEqual(model.calls, [("frame.jpg", 0.5, 0.9, True)])
         self.assertEqual(len(detections), 2)
         self.assertEqual(detections[0].frame_idx, 12)
         self.assertEqual(detections[0].bbox_xyxy, (0.0, 0.0, 25.0, 25.0))
@@ -92,7 +96,10 @@ class RoboflowPlayerDetectorTest(unittest.TestCase):
         model = FakeModel(())
         with patch.dict(
             os.environ,
-            {"RFDETR_CONFIDENCE_THRESHOLD": "0.67"},
+            {
+                "RFDETR_CONFIDENCE_THRESHOLD": "0.67",
+                "RFDETR_IOU_THRESHOLD": "0.8",
+            },
             clear=True,
         ):
             detector = RoboflowPlayerDetector(
@@ -100,7 +107,8 @@ class RoboflowPlayerDetectorTest(unittest.TestCase):
                 model=model,
             )
 
-        self.assertEqual(detector.confidence_threshold, 0.65)
+        self.assertEqual(detector.confidence_threshold, 0.67)
+        self.assertEqual(detector.iou_threshold, 0.8)
         self.assertEqual(detector.detect("frame.jpg", 0), ())
 
     def test_rejects_invalid_configuration_and_frame_index(self) -> None:
@@ -110,6 +118,12 @@ class RoboflowPlayerDetectorTest(unittest.TestCase):
             RoboflowPlayerDetector(
                 model_id="workspace/model",
                 confidence_threshold=1.1,
+                model=model,
+            )
+        with self.assertRaisesRegex(ValueError, "iou_threshold"):
+            RoboflowPlayerDetector(
+                model_id="workspace/model",
+                iou_threshold=-0.1,
                 model=model,
             )
 
