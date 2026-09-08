@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import os
 import json
+import os
 import tempfile
 import unittest
 from dataclasses import replace
@@ -9,12 +9,15 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-
-from nba_3d_scene_reconstruction.ingest_video import processNewVideo
-from nba_3d_scene_reconstruction.tracking.schemas import SamMaskPrediction, VideoManifest
-from nba_3d_scene_reconstruction.tracking_demo import render_tracking_video
 from test_court_calibration import synthetic_detection
 from test_scene_pipeline import FakeCourtDetector, make_scene
+
+from nba_3d_scene_reconstruction.ingest_video import processNewVideo
+from nba_3d_scene_reconstruction.tracking.schemas import (
+    SamMaskPrediction,
+    VideoManifest,
+)
+from nba_3d_scene_reconstruction.tracking_demo import render_tracking_video
 
 
 class FakeTrackingPipeline:
@@ -43,11 +46,14 @@ class TrackingDemoTest(unittest.TestCase):
             frames = root / "frames"
             frames.mkdir()
             for frame_idx in range(3):
-                cv2.imwrite(str(frames / f"{frame_idx:06d}.jpg"),
-                            np.zeros((480, 640, 3), dtype=np.uint8))
+                cv2.imwrite(
+                    str(frames / f"{frame_idx:06d}.jpg"),
+                    np.zeros((480, 640, 3), dtype=np.uint8),
+                )
             scene = make_scene(FakeCourtDetector({0: synthetic_detection()}))
-            manifest = VideoManifest("clip", "segment-1", "source.mp4", str(frames),
-                                     25.0, 640, 480, 3)
+            manifest = VideoManifest(
+                "clip", "segment-1", "source.mp4", str(frames), 25.0, 640, 480, 3
+            )
             output = render_tracking_video(
                 manifest,
                 scene,
@@ -56,17 +62,34 @@ class TrackingDemoTest(unittest.TestCase):
                 max_frames=2,
             )
             records = {}
-            for name in ("observations", "court_detections", "calibrations",
-                         "player_court_positions_raw"):
-                records[name] = [json.loads(line) for line in
-                                 (root / "records" / f"{name}.jsonl").read_text().splitlines()]
+            for name in (
+                "observations",
+                "court_detections",
+                "calibrations",
+                "player_court_positions_raw",
+                "player_court_positions_clean",
+            ):
+                records[name] = [
+                    json.loads(line)
+                    for line in (root / "records" / f"{name}.jsonl")
+                    .read_text()
+                    .splitlines()
+                ]
             self.assertEqual(len(records["court_detections"]), 1)
-            for name in ("observations", "calibrations", "player_court_positions_raw"):
+            for name in (
+                "observations",
+                "calibrations",
+                "player_court_positions_raw",
+                "player_court_positions_clean",
+            ):
                 self.assertEqual([row["frame_idx"] for row in records[name]], [0, 1])
             position = records["player_court_positions_raw"][1]
             self.assertIsNotNone(position["raw_court_xy"])
             self.assertEqual(position["timestamp_seconds"], 1 / 25)
             self.assertEqual(position["calibration_age_frames"], 1)
+            self.assertIsNotNone(
+                records["player_court_positions_clean"][1]["clean_court_xy"]
+            )
             capture = cv2.VideoCapture(str(output))
             self.assertEqual(int(capture.get(cv2.CAP_PROP_FRAME_COUNT)), 2)
             self.assertGreater(int(capture.get(cv2.CAP_PROP_FRAME_WIDTH)), 640)
@@ -87,9 +110,7 @@ class TrackingDemoTest(unittest.TestCase):
             )
             self.assertTrue(source_writer.isOpened())
             for value in (20, 40, 60):
-                source_writer.write(
-                    np.full((48, 64, 3), value, dtype=np.uint8)
-                )
+                source_writer.write(np.full((48, 64, 3), value, dtype=np.uint8))
             source_writer.release()
 
             previous_directory = Path.cwd()

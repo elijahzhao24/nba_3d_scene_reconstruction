@@ -29,13 +29,15 @@ This writes a synchronized diagnostic video to
 `artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
 the source video with masks, IDs, player footpoints, detected court keypoints,
 and canonical landmarks reprojected through the homography. Its right side
-shows only raw player dots and IDs on a fixed top-down court. Calibration
+shows cleaned player dots and IDs on a fixed top-down court. Calibration
 metrics remain available in `calibrations.jsonl` without cluttering the video.
 
-The command also writes four JSONL files under
+The command also writes five JSONL files under
 `artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
 `court_detections.jsonl`, `calibrations.jsonl`, and
-`player_court_positions_raw.jsonl`. The environment must configure both the
+`player_court_positions_raw.jsonl`, plus
+`player_court_positions_clean.jsonl`. Raw positions remain available for
+diagnosis and smoothing retuning. The environment must configure both the
 player and court models as described in `.env.example`.
 
 Use `--court-interval 5` to reduce hosted court-model calls if per-frame
@@ -72,19 +74,29 @@ Create a new tracking/scene pipeline per continuous segment; starting it
 resets calibration for that segment. Camera-cut detection is not automatic.
 
 The player detector defaults to confidence `0.66` and class-agnostic NMS at
-IoU `0.90`. Before a new track is created, the scene pipeline projects the
-detection's bottom-center point and rejects it when it falls beyond the
-configured 100 cm court margin. Existing SAM tracks can survive a brief missed
-detection, so this filter does not make short occlusions disappear.
+IoU `0.90`. It accepts the five player/action class names and excludes number,
+ball, referee, and rim classes. New detections must project within 30 cm of the
+court, appear at two consecutive detector checkpoints, and fit under the
+10-player live-track cap. Overlapping unmatched boxes at IoU `0.85` are treated
+as duplicate class predictions. Existing good SAM masks are only re-prompted
+when their association score falls below `0.75`.
+
+SAM masks receive the reference notebook's detached-component cleanup: keep
+the largest region and regions whose edge is within `0.03` of the image
+diagonal. A propagated mask farther than 100 cm outside the court is treated
+as missing and retires under the normal missing-track timeout.
 
 `court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
-in **centimeters**, plus the calibration source frame, age, and quality flags.
+and `clean_court_xy` in **centimeters**, plus the calibration source frame,
+age, and quality flags.
 Invalid calibration, missing footpoints, projection at infinity, and positions
 outside the court plus a configurable 100 cm margin produce a null position.
-Footpoints are approximate floor contacts; jumping and occlusion still need
-later trajectory cleanup. The top-down view deliberately shows raw positions
-so calibration and footpoint failures stay visible. Three.js export remains a
-future step.
+Court landmarks use an aggressive EMA (`alpha=0.25`) before homography fitting.
+After projection, trajectories use robust speed filtering (`jump_sigma=3.5`,
+minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
+interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
+centered, so the minimap is replaced with cleaned positions in a lightweight
+second render pass after inference. Three.js export remains a future step.
 
 ## Summary
 

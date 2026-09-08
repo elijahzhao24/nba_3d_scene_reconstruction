@@ -85,7 +85,7 @@ class CourtCalibration:
 
 @dataclass(frozen=True)
 class PlayerCourtPosition:
-    """Raw floor-plane projection in canonical court centimeters."""
+    """Raw and temporally cleaned floor-plane positions in centimeters."""
 
     segment_id: str
     frame_idx: int
@@ -96,3 +96,5 @@ class PlayerCourtPosition:
     calibration_source_frame_idx: int | None
     calibration_age_frames: int | None
     quality_flags: tuple[str, ...] = ()
+    clean_court_xy: Point | None = None
+    position_was_edited: bool = False

@@ -25,8 +25,16 @@ REPROJECTED = (245, 220, 60)  # cyan
 
 
 def _text(canvas, value, xy, color=TEXT, scale=0.55, thickness=1):
-    cv2.putText(canvas, value, xy, cv2.FONT_HERSHEY_SIMPLEX,
-                scale, color, thickness, cv2.LINE_AA)
+    cv2.putText(
+        canvas,
+        value,
+        xy,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
 
 
 def _pixel(point, shape):
@@ -75,17 +83,32 @@ def draw_source_overlay(
             for index, point in enumerate(config.landmark_points_cm):
                 with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
                     homogeneous = matrix @ np.asarray((*point, 1.0))
-                    if not np.isfinite(homogeneous).all() or abs(homogeneous[2]) < 1e-12:
+                    if (
+                        not np.isfinite(homogeneous).all()
+                        or abs(homogeneous[2]) < 1e-12
+                    ):
                         continue
                     pixel = _pixel(homogeneous[:2] / homogeneous[2], frame.shape)
                 if pixel is not None:
                     projected[index] = pixel
-                    cv2.drawMarker(result, pixel, REPROJECTED, cv2.MARKER_TILTED_CROSS,
-                                   size * 2, thickness, cv2.LINE_AA)
+                    cv2.drawMarker(
+                        result,
+                        pixel,
+                        REPROJECTED,
+                        cv2.MARKER_TILTED_CROSS,
+                        size * 2,
+                        thickness,
+                        cv2.LINE_AA,
+                    )
                     if index not in detected_ids:
-                        _text(result, config.landmark_labels[index],
-                              (pixel[0] + size, pixel[1] + size * 2),
-                              REPROJECTED, 0.45 * scale, thickness)
+                        _text(
+                            result,
+                            config.landmark_labels[index],
+                            (pixel[0] + size, pixel[1] + size * 2),
+                            REPROJECTED,
+                            0.45 * scale,
+                            thickness,
+                        )
 
     if detection is not None:
         for point in detection.keypoints:
@@ -94,13 +117,27 @@ def draw_source_overlay(
             pixel = _pixel(point.image_xy, frame.shape)
             if pixel is None:
                 continue
-            color = DETECTED if point.confidence >= config.keypoint_confidence else MUTED
+            color = (
+                DETECTED if point.confidence >= config.keypoint_confidence else MUTED
+            )
             if point.landmark_id in projected:
-                cv2.line(result, pixel, projected[point.landmark_id], MUTED,
-                         max(1, thickness // 2), cv2.LINE_AA)
+                cv2.line(
+                    result,
+                    pixel,
+                    projected[point.landmark_id],
+                    MUTED,
+                    max(1, thickness // 2),
+                    cv2.LINE_AA,
+                )
             cv2.circle(result, pixel, size, color, thickness, cv2.LINE_AA)
-            _text(result, point.label, (pixel[0] + size, pixel[1] - size),
-                  color, 0.45 * scale, thickness)
+            _text(
+                result,
+                point.label,
+                (pixel[0] + size, pixel[1] - size),
+                color,
+                0.45 * scale,
+                thickness,
+            )
 
     for observation in observations:
         pixel = _pixel(observation.footpoint_xy, frame.shape)
@@ -156,6 +193,7 @@ class CourtDebugRenderer:
         radius = math.hypot(424 - 160, 762 - 91)
         angle = math.atan2(762 - 91, 424 - 160)
         for right in (False, True):
+
             def mirrored(points):
                 return [(2865 - x if right else x, y) for x, y in points]
 
@@ -163,8 +201,14 @@ class CourtDebugRenderer:
             path(mirrored([(0, 91), (424, 91)]))
             path(mirrored([(0, 1433), (424, 1433)]))
             path(mirrored([(120, 671), (120, 853)]))
-            path(mirrored([(160 + radius * np.cos(a), 762 + radius * np.sin(a))
-                           for a in np.linspace(-angle, angle, 100)]))
+            path(
+                mirrored(
+                    [
+                        (160 + radius * np.cos(a), 762 + radius * np.sin(a))
+                        for a in np.linspace(-angle, angle, 100)
+                    ]
+                )
+            )
             arc(2865 - 579 if right else 579, 762, 183, 0, 2 * math.pi)
             hoop = self.court_to_panel((2705 if right else 160, 762))
             cv2.circle(panel, hoop, 5, DETECTED, 2, cv2.LINE_AA)
@@ -181,47 +225,84 @@ class CourtDebugRenderer:
             raise ValueError("bird's-eye panel height must be at least 720")
         if not math.isfinite(fps) or fps <= 0:
             raise ValueError("fps must be finite and positive")
-        if any(p.frame_idx != calibration.frame_idx or p.segment_id != calibration.segment_id
-               for p in positions):
+        if any(
+            p.frame_idx != calibration.frame_idx
+            or p.segment_id != calibration.segment_id
+            for p in positions
+        ):
             raise ValueError("positions must match calibration segment/frame")
         panel = np.full((height, self.PANEL_WIDTH, 3), BACKGROUND, np.uint8)
         self._court(panel)
         if calibration.valid:
             for position in positions:
-                xy = position.raw_court_xy
+                xy = position.clean_court_xy or position.raw_court_xy
                 if xy is None or not np.isfinite(xy).all():
                     continue
-                if (np.any(np.asarray(xy) < self.minimum - self.MARGIN_CM)
-                        or np.any(np.asarray(xy) > self.maximum + self.MARGIN_CM)):
+                if np.any(np.asarray(xy) < self.minimum - self.MARGIN_CM) or np.any(
+                    np.asarray(xy) > self.maximum + self.MARGIN_CM
+                ):
                     continue
                 pixel = self.court_to_panel(xy)
                 color = TRACK_COLORS[position.track_id % len(TRACK_COLORS)]
                 cv2.circle(panel, pixel, 11, BACKGROUND, -1, cv2.LINE_AA)
                 cv2.circle(panel, pixel, 8, color, -1, cv2.LINE_AA)
-                _text(panel, str(position.track_id), (pixel[0] + 13, pixel[1] + 5), TEXT, 0.6, 2)
+                _text(
+                    panel,
+                    str(position.track_id),
+                    (pixel[0] + 13, pixel[1] + 5),
+                    TEXT,
+                    0.6,
+                    2,
+                )
         return panel
 
-    def render(self, frame: np.ndarray, result: SceneFrame, *, fps: float) -> np.ndarray:
+    def render(
+        self, frame: np.ndarray, result: SceneFrame, *, fps: float
+    ) -> np.ndarray:
         """Return one even-sized composite at the original frame's timestamp."""
         source = draw_source_overlay(
-            frame, result.masks, result.observations, result.court_detection,
-            result.calibration, configuration=self.configuration,
+            frame,
+            result.masks,
+            result.observations,
+            result.court_detection,
+            result.calibration,
+            configuration=self.configuration,
         )
         factor = min(1.0, 1280 / frame.shape[1], 800 / frame.shape[0])
         width = max(2, round(frame.shape[1] * factor))
         source_height = max(2, round(frame.shape[0] * factor))
-        source = cv2.resize(source, (width, source_height), interpolation=cv2.INTER_AREA)
+        source = cv2.resize(
+            source, (width, source_height), interpolation=cv2.INTER_AREA
+        )
         width += width % 2
         height = max(self.MIN_HEIGHT, source_height + 106)
         height += height % 2
         left = np.full((height, width, 3), BACKGROUND, np.uint8)
         _text(left, "SOURCE / PLAYER & COURT OVERLAY", (16, 29), TEXT, 0.6, 1)
-        left[48:48 + source_height, :source.shape[1]] = source
+        left[48 : 48 + source_height, : source.shape[1]] = source
         # Two rows remain readable even for a narrow source video.
-        _text(left, "Yellow O: detected keypoint   Gray O: low confidence", (16, height - 35), DETECTED, 0.43)
-        _text(left, "Cyan X: reprojected landmark   Colored +: player footpoint", (16, height - 15), REPROJECTED, 0.43)
+        _text(
+            left,
+            "Yellow O: detected keypoint   Gray O: low confidence",
+            (16, height - 35),
+            DETECTED,
+            0.43,
+        )
+        _text(
+            left,
+            "Cyan X: reprojected landmark   Colored +: player footpoint",
+            (16, height - 15),
+            REPROJECTED,
+            0.43,
+        )
         if result.court_detection is None:
-            _text(left, "No raw keypoints for this frame", (16, 49 + source_height + 18), MUTED, 0.43)
+            _text(
+                left,
+                "No raw keypoints for this frame",
+                (16, 49 + source_height + 18),
+                MUTED,
+                0.43,
+            )
         right = self.draw_birdseye(
             result.positions,
             result.calibration,

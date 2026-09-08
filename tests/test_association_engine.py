@@ -68,7 +68,7 @@ class PlayerAssociationEngineTest(unittest.TestCase):
         self.assertEqual(result.unmatched_detection_indices, (0,))
         self.assertEqual(result.unmatched_track_ids, (7,))
 
-    def test_matching_is_one_to_one(self) -> None:
+    def test_matching_is_one_to_one_and_suppresses_duplicate_box(self) -> None:
         result = self.engine.associate(
             detections=(
                 detection(5, (10, 20, 30, 60)),
@@ -80,8 +80,8 @@ class PlayerAssociationEngineTest(unittest.TestCase):
         self.assertEqual(len(result.matches), 1)
         self.assertEqual(result.matches[0].detection_index, 0)
         self.assertEqual(result.matches[0].track_id, 7)
-        self.assertEqual(result.unmatched_detection_indices, (1,))
-        self.assertEqual(result.ignored_duplicate_detection_indices, ())
+        self.assertEqual(result.unmatched_detection_indices, ())
+        self.assertEqual(result.ignored_duplicate_detection_indices, (1,))
 
     def test_ignores_unmatched_detection_overlapping_a_matched_one(self) -> None:
         result = self.engine.associate(

@@ -19,14 +19,18 @@ class PlayerAssociationEngine:
     """Perform stateless, one-to-one matching at detector checkpoints."""
 
     MINIMUM_SCORE = 0.4
-    DUPLICATE_IOU_THRESHOLD = 0.95
+    # RF-DETR can emit both the generic player class and an action-specific
+    # player class around the same body. Treat a strong overlap as duplicate
+    # evidence instead of starting another SAM object.
+    DUPLICATE_IOU_THRESHOLD = 0.85
     IOU_WEIGHT = 0.5
     CENTER_WEIGHT = 0.5
 
-    '''
+    """
     Matches new RF-DETR boxes to exisiting SAM IDS.
     returns a list of matched and unmatched indices.
-    '''
+    """
+
     def associate(
         self,
         *,
@@ -109,9 +113,7 @@ class PlayerAssociationEngine:
                 for sam_mask in sam_masks
                 if sam_mask.track_id not in matched_track_ids
             ),
-            ignored_duplicate_detection_indices=(
-                ignored_duplicate_detection_indices
-            ),
+            ignored_duplicate_detection_indices=(ignored_duplicate_detection_indices),
         )
 
     @staticmethod
@@ -150,12 +152,8 @@ class PlayerAssociationEngine:
         )
         intersection_area = intersection_width * intersection_height
 
-        first_area = max(0.0, first_x2 - first_x1) * max(
-            0.0, first_y2 - first_y1
-        )
-        second_area = max(0.0, second_x2 - second_x1) * max(
-            0.0, second_y2 - second_y1
-        )
+        first_area = max(0.0, first_x2 - first_x1) * max(0.0, first_y2 - first_y1)
+        second_area = max(0.0, second_x2 - second_x1) * max(0.0, second_y2 - second_y1)
         union_area = first_area + second_area - intersection_area
 
         if union_area <= 0.0:

@@ -29,21 +29,34 @@ class PlayerCourtProjector:
         if not math.isfinite(court_margin_cm) or court_margin_cm < 0:
             raise ValueError("court_margin_cm must be finite and non-negative")
         points = np.asarray(landmark_points_cm, dtype=np.float64)
-        if (points.ndim != 2 or points.shape[1] != 2 or len(points) < 4
-                or not np.isfinite(points).all()):
+        if (
+            points.ndim != 2
+            or points.shape[1] != 2
+            or len(points) < 4
+            or not np.isfinite(points).all()
+        ):
             raise ValueError("landmark_points_cm must contain finite court points")
-        self._minimum = points.min(axis=0) - court_margin_cm
-        self._maximum = points.max(axis=0) + court_margin_cm
+        self._court_minimum = points.min(axis=0)
+        self._court_maximum = points.max(axis=0)
+        self._court_margin_cm = court_margin_cm
 
     def contains_image_point(
         self,
         point: Point,
         calibration: CourtCalibration,
+        *,
+        margin_cm: float = 0.0,
     ) -> bool:
         """Return whether an image point projects within the court margin."""
+        if not math.isfinite(margin_cm) or margin_cm < 0.0:
+            raise ValueError("margin_cm must be finite and non-negative")
         if not calibration.valid or calibration.image_to_court is None:
             return False
-        court_xy, failure = self._project_point(point, calibration.image_to_court)
+        court_xy, failure = self._project_point(
+            point,
+            calibration.image_to_court,
+            margin_cm=margin_cm,
+        )
         return court_xy is not None and failure is None
 
     def project(
@@ -54,8 +67,10 @@ class PlayerCourtProjector:
         """Join only observations and calibrations from the same segment/frame."""
         positions = []
         for observation in observations:
-            if (observation.segment_id != calibration.segment_id
-                    or observation.frame_idx != calibration.frame_idx):
+            if (
+                observation.segment_id != calibration.segment_id
+                or observation.frame_idx != calibration.frame_idx
+            ):
                 raise ValueError("observation and calibration segment/frame must match")
             flags = list(observation.quality_flags + calibration.quality_flags)
             court_xy = None
@@ -67,24 +82,34 @@ class PlayerCourtProjector:
                 flags.append("footpoint_missing")
             elif calibration.valid and calibration.image_to_court is not None:
                 court_xy, failure = self._project_point(
-                    observation.footpoint_xy, calibration.image_to_court,
+                    observation.footpoint_xy,
+                    calibration.image_to_court,
+                    margin_cm=self._court_margin_cm,
                 )
                 if failure:
                     flags.append(failure)
-            positions.append(PlayerCourtPosition(
-                segment_id=observation.segment_id,
-                frame_idx=observation.frame_idx,
-                timestamp_seconds=observation.timestamp_seconds,
-                track_id=observation.track_id,
-                footpoint_image_xy=observation.footpoint_xy,
-                raw_court_xy=court_xy,
-                calibration_source_frame_idx=calibration.source_frame_idx,
-                calibration_age_frames=calibration.age_frames,
-                quality_flags=tuple(dict.fromkeys(flags)),
-            ))
+            positions.append(
+                PlayerCourtPosition(
+                    segment_id=observation.segment_id,
+                    frame_idx=observation.frame_idx,
+                    timestamp_seconds=observation.timestamp_seconds,
+                    track_id=observation.track_id,
+                    footpoint_image_xy=observation.footpoint_xy,
+                    raw_court_xy=court_xy,
+                    calibration_source_frame_idx=calibration.source_frame_idx,
+                    calibration_age_frames=calibration.age_frames,
+                    quality_flags=tuple(dict.fromkeys(flags)),
+                )
+            )
         return tuple(positions)
 
-    def _project_point(self, point: Point, homography) -> tuple[Point | None, str | None]:
+    def _project_point(
+        self,
+        point: Point,
+        homography,
+        *,
+        margin_cm: float,
+    ) -> tuple[Point | None, str | None]:
         matrix = np.asarray(homography, dtype=np.float64)
         if matrix.shape != (3, 3) or not np.isfinite(matrix).all():
             return None, "invalid_homography"
@@ -100,6 +125,8 @@ class PlayerCourtProjector:
             xy = transformed[:2] / transformed[2]
         if not np.isfinite(xy).all():
             return None, "projection_nonfinite"
-        if np.any(xy < self._minimum) or np.any(xy > self._maximum):
+        minimum = self._court_minimum - margin_cm
+        maximum = self._court_maximum + margin_cm
+        if np.any(xy < minimum) or np.any(xy > maximum):
             return None, "outside_court"
         return (float(xy[0]), float(xy[1])), None

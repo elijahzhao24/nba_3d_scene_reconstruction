@@ -105,6 +105,7 @@ Initial values to tune from debug footage:
 checkpoint interval       1 frame
 court confidence          0.30
 keypoint confidence       0.50
+landmark EMA alpha        0.25
 RANSAC threshold          8 px
 minimum inliers           5
 minimum inlier ratio      0.45
@@ -168,8 +169,11 @@ track independently:
 4. Linearly interpolate only short gaps with valid positions on both sides.
 5. Apply a light Savitzky-Golay filter independently to court `x` and `y`.
 
-Default with a  nine-frame, second-order Savitzky-Golay filter after jump/suspicious frame removal. This is an offline
-centered filter and uses roughly four future frames. 
+Defaults match the reference notebook: `jump_sigma=3.5`, minimum jump distance
+`18.288 cm` (the notebook's `0.6 ft`), maximum short jump run `18`, two frames
+of padding, and a nine-frame, second-order Savitzky-Golay filter after
+jump/suspicious-frame removal. This is an offline centered filter and uses
+roughly four future frames.
 
 Never smooth across retired/reassigned track IDs, or long missing
 intervals. Preserve raw and cleaned positions so smoothing can be tuned

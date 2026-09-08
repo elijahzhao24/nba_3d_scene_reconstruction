@@ -1517,6 +1517,7 @@ dependencies = [
     { name = "inference-sdk" },
     { name = "numpy" },
     { name = "opencv-python" },
+    { name = "scipy" },
 ]
 
 [package.optional-dependencies]
@@ -1532,6 +1533,7 @@ requires-dist = [
     { name = "numpy", specifier = ">=2.0.0" },
     { name = "opencv-python", specifier = ">=4.10.0" },
     { name = "sam-2", marker = "extra == 'gpu'", git = "https://github.com/facebookresearch/sam2.git" },
+    { name = "scipy", specifier = ">=1.14.0" },
 ]
 provides-extras = ["gpu"]
 

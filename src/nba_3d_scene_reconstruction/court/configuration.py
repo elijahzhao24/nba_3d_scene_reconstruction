@@ -19,7 +19,10 @@ DEFAULT_MINIMUM_INLIER_RATIO = 0.45
 DEFAULT_MINIMUM_COURT_COVERAGE_RATIO = 0.03
 DEFAULT_MAXIMUM_MEDIAN_REPROJECTION_ERROR_PX = 8.0
 DEFAULT_MAXIMUM_CALIBRATION_AGE_FRAMES = 15
-DEFAULT_LANDMARK_SMOOTHING_ALPHA = 1.0
+# A quarter of each new keypoint observation is applied per frame. This is
+# intentionally fairly strong because tiny keypoint changes are magnified by
+# image-to-court projection, especially near the far sideline.
+DEFAULT_LANDMARK_SMOOTHING_ALPHA = 0.25
 
 # The labels intentionally contain gaps (based on the Roboflow dataset). Their
 # tuple index is the dense landmark index returned by the version-pinned model.

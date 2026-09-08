@@ -12,8 +12,28 @@ from .schemas import (
     BoundingBox,
     ObservationSource,
     PlayerObservation,
+    Point,
     SamMaskPrediction,
 )
+
+
+def mask_footpoint(mask: np.ndarray) -> Point | None:
+    """Return the robust footpoint of the largest connected mask region."""
+    value = np.asarray(mask)
+    if value.ndim != 2 or value.dtype != np.bool_:
+        raise ValueError("player masks must be 2D boolean arrays")
+    if not value.any():
+        return None
+    _, labels, stats, _ = cv2.connectedComponentsWithStats(
+        value.astype(np.uint8),
+        connectivity=8,
+    )
+    component = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
+    y, x = np.nonzero(labels == component)
+    bottom = int(y.max())
+    band_height = max(1, math.ceil((bottom - int(y.min()) + 1) * 0.05))
+    feet_x = x[y > bottom - band_height]
+    return (float(np.median(feet_x)), float(bottom))
 
 
 def build_player_observations(
@@ -36,7 +56,9 @@ def build_player_observations(
     downstream consumers can distinguish that fallback from current mask data.
     """
     if not segment_id or frame_idx < 0:
-        raise ValueError("segment_id must not be empty and frame_idx must be non-negative")
+        raise ValueError(
+            "segment_id must not be empty and frame_idx must be non-negative"
+        )
     if not math.isfinite(fps) or fps <= 0:
         raise ValueError("fps must be finite and positive")
     by_track: dict[int, SamMaskPrediction] = {}
@@ -63,7 +85,8 @@ def build_player_observations(
                 flags.append("empty_mask")
             else:
                 count, labels, stats, _ = cv2.connectedComponentsWithStats(
-                    mask.astype(np.uint8), connectivity=8,
+                    mask.astype(np.uint8),
+                    connectivity=8,
                 )
                 component = 1 + int(np.argmax(stats[1:, cv2.CC_STAT_AREA]))
                 y, x = np.nonzero(labels == component)
@@ -75,11 +98,15 @@ def build_player_observations(
                 if bottom == mask.shape[0] - 1:
                     flags.append("mask_touches_image_bottom")
                 geometry = {
-                    "bbox_xyxy": (float(x.min()), float(y.min()),
-                                  float(x.max() + 1), float(bottom + 1)),
+                    "bbox_xyxy": (
+                        float(x.min()),
+                        float(y.min()),
+                        float(x.max() + 1),
+                        float(bottom + 1),
+                    ),
                     "centroid_xy": (float(x.mean()), float(y.mean())),
                     "footpoint_xy": (float(np.median(feet_x)), float(bottom)),
-                    "mask_area": int(len(x)),
+                    "mask_area": len(x),
                 }
                 visible = True
         if not visible:
@@ -94,16 +121,21 @@ def build_player_observations(
                         "mask_area": 0,
                     }
                     flags.append("bbox_footpoint_fallback")
-        observations.append(PlayerObservation(
-            segment_id=segment_id,
-            frame_idx=frame_idx,
-            timestamp_seconds=frame_idx / fps,
-            track_id=track_id,
-            visible=visible,
-            source=(ObservationSource.SAM2_PROPAGATION if visible
-                    else ObservationSource.MISSING),
-            detection_confidence=(detection_confidences or {}).get(track_id),
-            quality_flags=tuple(flags),
-            **geometry,
-        ))
+        observations.append(
+            PlayerObservation(
+                segment_id=segment_id,
+                frame_idx=frame_idx,
+                timestamp_seconds=frame_idx / fps,
+                track_id=track_id,
+                visible=visible,
+                source=(
+                    ObservationSource.SAM2_PROPAGATION
+                    if visible
+                    else ObservationSource.MISSING
+                ),
+                detection_confidence=(detection_confidences or {}).get(track_id),
+                quality_flags=tuple(flags),
+                **geometry,
+            )
+        )
     return tuple(observations)

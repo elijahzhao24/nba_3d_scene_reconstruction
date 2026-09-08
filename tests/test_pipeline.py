@@ -58,7 +58,7 @@ class FakeSamTracker:
 
 
 class PlayerTrackingPipelineTest(unittest.TestCase):
-    def test_initializes_ids_then_adds_new_player_at_checkpoint(self) -> None:
+    def test_initializes_ids_then_confirms_new_player_at_two_checkpoints(self) -> None:
         detector = FakeDetector(
             {
                 0: (detection(0, (10, 20, 30, 60)),),
@@ -67,6 +67,10 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
                     detection(2, (10.2, 20.2, 30.2, 60.2)),
                     detection(2, (60, 20, 80, 60)),
                 ),
+                4: (
+                    detection(4, (10, 20, 30, 60)),
+                    detection(4, (60, 20, 80, 60)),
+                ),
             }
         )
         sam = FakeSamTracker(
@@ -74,6 +78,8 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
                 0: (mask(0, 1, (10, 20, 30, 60)),),
                 1: (mask(1, 1, (10, 20, 30, 60)),),
                 2: (mask(2, 1, (10, 20, 30, 60)),),
+                3: (mask(3, 1, (10, 20, 30, 60)),),
+                4: (mask(4, 1, (10, 20, 30, 60)),),
             }
         )
         manager = PlayerTrackManager("segment-1")
@@ -89,6 +95,9 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
         pipeline.process_frame(object(), 0)
         pipeline.process_frame(object(), 1)
         pipeline.process_frame(object(), 2)
+        self.assertEqual(set(manager.tracks), {1})
+        pipeline.process_frame(object(), 3)
+        pipeline.process_frame(object(), 4)
 
         observations = {item.track_id: item for item in pipeline.observations}
         self.assertEqual(observations[1].footpoint_xy, (19.5, 59))
@@ -99,16 +108,42 @@ class PlayerTrackingPipelineTest(unittest.TestCase):
         self.assertIn("bbox_footpoint_fallback", observations[2].quality_flags)
         self.assertEqual(observations[2].detection_confidence, 0.9)
 
-        self.assertEqual(detector.calls, [0, 2])
+        self.assertEqual(detector.calls, [0, 2, 4])
         self.assertEqual(set(manager.tracks), {1, 2})
         self.assertEqual(
             sam.prompts,
             [
                 (0, 1, (10, 20, 30, 60)),
-                (2, 1, (10, 20, 30, 60)),
-                (2, 2, (60, 20, 80, 60)),
+                (4, 2, (60, 20, 80, 60)),
             ],
         )
+
+    def test_caps_initial_tracks_at_ten_highest_confidence_players(self) -> None:
+        detections = tuple(
+            PlayerDetection(
+                frame_idx=0,
+                bbox_xyxy=(float(index), 0.0, float(index + 1), 10.0),
+                confidence=index / 20,
+                class_id=1,
+            )
+            for index in range(12)
+        )
+        detector = FakeDetector({0: detections})
+        sam = FakeSamTracker({})
+        pipeline = PlayerTrackingPipeline(
+            detector=detector,
+            sam_tracker=sam,
+            association_engine=PlayerAssociationEngine(),
+            track_manager=PlayerTrackManager("segment-1"),
+        )
+
+        pipeline.start_segment("frames")
+        pipeline.process_frame(object(), 0)
+
+        self.assertEqual(len(pipeline.track_manager.tracks), 10)
+        prompted_boxes = {prompt[2] for prompt in sam.prompts}
+        self.assertNotIn((0.0, 0.0, 1.0, 10.0), prompted_boxes)
+        self.assertNotIn((1.0, 0.0, 2.0, 10.0), prompted_boxes)
 
     def test_marks_missing_tracks_and_retires_them(self) -> None:
         detector = FakeDetector({0: (detection(0, (10, 20, 30, 60)),)})

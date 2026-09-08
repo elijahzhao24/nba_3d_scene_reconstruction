@@ -60,8 +60,10 @@ detector checkpoints.
 - RF-DETR generates fresh boxes
 - SAM 2 has current masks with track IDs
 - Association engine matches boxes to masks
-- Matched boxes correct existing SAM objects
-- unmatched npxes create new player IDs
+- Matched boxes correct existing SAM objects only when association drops below
+  the correction threshold
+- Unmatched boxes become pending candidates; two consecutive checkpoints are
+  required before a new player ID is created
 
 ## Components
 
@@ -180,10 +182,16 @@ RF-DETR or SAM 2.
 
 - `ROBOFLOW_MODEL_ID`: fine-tuned RF-DETR deployment model ID;
 - `ROBOFLOW_API_KEY`: private key used to download the model weights;
-- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.66`;
+- `RFDETR_CONFIDENCE_THRESHOLD`: detector threshold, default `0.66` (the
+  reference notebook uses `0.40`, but the stricter value improves crowd
+  precision);
 - `RFDETR_IOU_THRESHOLD`: class-agnostic NMS threshold, default `0.90`;
 - RF-DETR checkpoint interval, initially every five frames;
-- association score threshold and weights;
+- association minimum score `0.40`, equal IoU/center weights, correction
+  re-prompt score below `0.75`, and duplicate IoU `0.85`;
+- at most 10 live player tracks and two checkpoint confirmations for entrants;
+- new-detection court margin `30 cm` and propagated-mask margin `100 cm`;
+- detached SAM mask component edge distance `0.03` of the image diagonal;
 - maximum missing frames;
 - minimum and maximum valid mask area.
 

@@ -70,7 +70,7 @@ class CourtCalibrationConfigurationTest(unittest.TestCase):
         self.assertEqual(configuration.minimum_inlier_ratio, 0.45)
         self.assertEqual(configuration.minimum_court_coverage_ratio, 0.03)
         self.assertEqual(configuration.maximum_calibration_age_frames, 15)
-        self.assertEqual(configuration.landmark_smoothing_alpha, 1.0)
+        self.assertEqual(configuration.landmark_smoothing_alpha, 0.25)
 
     def test_rejects_invalid_numerical_thresholds(self) -> None:
         with self.assertRaisesRegex(ValueError, "must be positive"):

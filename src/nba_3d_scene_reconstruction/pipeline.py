@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -10,8 +11,12 @@ from .court.calibration import CourtCalibrator, CourtHomographyEstimator
 from .court.detector import RoboflowCourtDetector
 from .court.projector import PlayerCourtProjector
 from .court.schemas import CourtCalibration, CourtDetection, PlayerCourtPosition
+from .tracking.observations import mask_footpoint
 from .tracking.pipeline import PlayerTrackingPipeline
 from .tracking.schemas import PlayerDetection, PlayerObservation, SamMaskPrediction
+
+DEFAULT_NEW_PLAYER_COURT_MARGIN_CM = 30.0
+DEFAULT_TRACKED_MASK_COURT_MARGIN_CM = 100.0
 
 
 @dataclass(frozen=True)
@@ -36,18 +41,30 @@ class SceneReconstructionPipeline:
         calibrator: CourtCalibrator | None = None,
         projector: PlayerCourtProjector | None = None,
         court_detector_interval: int = 1,
+        new_player_court_margin_cm: float = DEFAULT_NEW_PLAYER_COURT_MARGIN_CM,
+        tracked_mask_court_margin_cm: float = (DEFAULT_TRACKED_MASK_COURT_MARGIN_CM),
     ) -> None:
         if not isinstance(court_detector_interval, int) or court_detector_interval <= 0:
             raise ValueError("court_detector_interval must be a positive integer")
+        for name, value in (
+            ("new_player_court_margin_cm", new_player_court_margin_cm),
+            ("tracked_mask_court_margin_cm", tracked_mask_court_margin_cm),
+        ):
+            if not math.isfinite(value) or value < 0.0:
+                raise ValueError(f"{name} must be finite and non-negative")
         self.tracking_pipeline = tracking_pipeline
         self.court_detector = court_detector
         self.calibrator = calibrator or CourtCalibrator(
-            CourtHomographyEstimator(detector_configuration=court_detector.configuration)
+            CourtHomographyEstimator(
+                detector_configuration=court_detector.configuration
+            )
         )
         self.projector = projector or PlayerCourtProjector(
             landmark_points_cm=self.calibrator.estimator.detector_configuration.landmark_points_cm
         )
         self.court_detector_interval = court_detector_interval
+        self.new_player_court_margin_cm = new_player_court_margin_cm
+        self.tracked_mask_court_margin_cm = tracked_mask_court_margin_cm
         self.segment_id = tracking_pipeline.track_manager.segment_id
 
     def start_segment(self, frames_dir: str) -> None:
@@ -62,24 +79,44 @@ class SceneReconstructionPipeline:
         if frame_idx % self.court_detector_interval == 0:
             detection = self.court_detector.detect(frame, frame_idx)
             calibration = self.calibrator.update(
-                detection, segment_id=self.segment_id, frame_idx=frame_idx,
+                detection,
+                segment_id=self.segment_id,
+                frame_idx=frame_idx,
             )
         else:
             calibration = self.calibrator.current(
-                segment_id=self.segment_id, frame_idx=frame_idx,
+                segment_id=self.segment_id,
+                frame_idx=frame_idx,
             )
         player_filter: Callable[[PlayerDetection], bool] | None = None
         if calibration.valid:
+
             def is_on_court(player_detection: PlayerDetection) -> bool:
                 x1, _, x2, y2 = player_detection.bbox_xyxy
                 return self.projector.contains_image_point(
-                    ((x1 + x2) / 2.0, y2), calibration,
+                    ((x1 + x2) / 2.0, y2),
+                    calibration,
+                    margin_cm=self.new_player_court_margin_cm,
                 )
+
             player_filter = is_on_court
+        mask_filter: Callable[[SamMaskPrediction], bool] | None = None
+        if calibration.valid:
+
+            def mask_is_near_court(mask: SamMaskPrediction) -> bool:
+                footpoint = mask_footpoint(mask.mask)
+                return footpoint is not None and self.projector.contains_image_point(
+                    footpoint,
+                    calibration,
+                    margin_cm=self.tracked_mask_court_margin_cm,
+                )
+
+            mask_filter = mask_is_near_court
         masks = self.tracking_pipeline.process_frame(
             frame,
             frame_idx,
             detection_filter=player_filter,
+            mask_filter=mask_filter,
         )
         observations = self.tracking_pipeline.observations
         return SceneFrame(
