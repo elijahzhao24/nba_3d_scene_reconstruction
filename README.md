@@ -8,9 +8,8 @@
 
 **Player tracking and unique identification + Homography and court projection:**
 
-<video controls src="./court_debug.webm">
-  <a href="./court_debug.webm">Watch the court calibration debug demo</a>
-</video>
+https://github.com/user-attachments/assets/a1dcea44-8aba-41a1-be09-47d6963e854d
+
 
 **Pose estimation + Lifing (WIP)**
 
