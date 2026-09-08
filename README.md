@@ -6,11 +6,11 @@
 ![High Level Diagram](high_level_diagram.png)
 
 
-**Player tracking and unique identification (8/24):**
+**Player tracking and unique identification + Homography and court projection:**
 
-https://github.com/user-attachments/assets/a7482237-7b0e-4695-8338-80ef4f4b170a
-
-**Keypoint detection + Homography (WIP)**
+<video controls src="./court_debug.webm">
+  <a href="./court_debug.webm">Watch the court calibration debug demo</a>
+</video>
 
 **Pose estimation + Lifing (WIP)**
 
