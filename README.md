@@ -15,88 +15,6 @@ https://github.com/user-attachments/assets/a1dcea44-8aba-41a1-be09-47d6963e854d
 
 **Visalize to Three.js (WIP)**
 
-## Tracking observations and court projection
-
-Run the models with court detection and a fresh homography attempt on every frame:
-
-```bash
-uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
-  --court-projection --max-frames 60
-```
-
-This writes a synchronized diagnostic video to
-`artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
-the source video with masks, IDs, player footpoints, detected court keypoints,
-and canonical landmarks reprojected through the homography. Its right side
-shows cleaned player dots and IDs on a fixed top-down court. Calibration
-metrics remain available in `calibrations.jsonl` without cluttering the video.
-
-The command also writes five JSONL files under
-`artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
-`court_detections.jsonl`, `calibrations.jsonl`, and
-`player_court_positions_raw.jsonl`, plus
-`player_court_positions_clean.jsonl`. Raw positions remain available for
-diagnosis and smoothing retuning. The environment must configure both the
-player and court models as described in `.env.example`.
-
-Use `--court-interval 5` to reduce hosted court-model calls if per-frame
-calibration is too slow. Failed frames temporarily hold the most recent valid
-transform for up to 15 frames.
-
-SAM 2 stores video frames and tracking history in CPU RAM by default to leave
-GPU memory available for inference. Its model still runs on the GPU. CPU
-storage can slow processing and increases host-memory use; it does not change
-the output resolution or playback FPS. Retired tracks are also removed from
-SAM 2's internal state. On a GPU with more memory, a custom runner can pass
-`offload_video_to_cpu=False` and/or `offload_state_to_cpu=False` to
-`Sam2PlayerTracker`.
-
-`PlayerTrackingPipeline.process_frame()` still returns masks; its
-`observations` attribute contains the latest frame's `PlayerObservation`
-records. Pass the video's actual `fps` when constructing the tracker (the
-standalone default is 30). Observations use the largest connected mask
-component and estimate the footpoint at the bottom, with x taken from the
-median of the lowest 5% of the component's height. When a live track has an
-empty or absent mask, its latest detector box supplies a provisional
-bottom-center footpoint. The observation remains marked missing and carries a
-`bbox_footpoint_fallback` flag so downstream cleanup can treat it accordingly.
-Detection confidence is recorded only on frames where that track was matched
-or created by the detector. Mask-derived observations retain
-`sam2_propagation` provenance; checkpoint re-prompts affect subsequent
-propagation. Masks remain in memory and `mask_ref` is unset.
-
-`SceneReconstructionPipeline` joins those observations with per-frame
-calibrations and returns a `SceneFrame`. Court detection runs every frame by
-default. When an interval is configured or a detection fails, it can hold the
-last valid calibration for up to 15 frames.
-Create a new tracking/scene pipeline per continuous segment; starting it
-resets calibration for that segment. Camera-cut detection is not automatic.
-
-The player detector defaults to confidence `0.66` and class-agnostic NMS at
-IoU `0.90`. It accepts the five player/action class names and excludes number,
-ball, referee, and rim classes. New detections must project within 30 cm of the
-court, appear at two consecutive detector checkpoints, and fit under the
-10-player live-track cap. Overlapping unmatched boxes at IoU `0.85` are treated
-as duplicate class predictions. Existing good SAM masks are only re-prompted
-when their association score falls below `0.75`.
-
-SAM masks receive the reference notebook's detached-component cleanup: keep
-the largest region and regions whose edge is within `0.03` of the image
-diagonal. A propagated mask farther than 100 cm outside the court is treated
-as missing and retires under the normal missing-track timeout.
-
-`court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
-and `clean_court_xy` in **centimeters**, plus the calibration source frame,
-age, and quality flags.
-Invalid calibration, missing footpoints, projection at infinity, and positions
-outside the court plus a configurable 100 cm margin produce a null position.
-Court landmarks use an aggressive EMA (`alpha=0.25`) before homography fitting.
-After projection, trajectories use robust speed filtering (`jump_sigma=3.5`,
-minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
-interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
-centered, so the minimap is replaced with cleaned positions in a lightweight
-second render pass after inference. Three.js export remains a future step.
-
 ## Summary
 
 The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.
@@ -393,3 +311,87 @@ data contract is stable.
 - Animation export API
 - Three.js viewer runtime
 - Manual ball annotation editor
+
+
+## How to run + how the pipeline works
+
+Run the models with court detection and a fresh homography attempt on every frame:
+
+```bash
+uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
+  --court-projection --max-frames 60
+```
+
+This writes a synchronized diagnostic video to
+`artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
+the source video with masks, IDs, player footpoints, detected court keypoints,
+and canonical landmarks reprojected through the homography. Its right side
+shows cleaned player dots and IDs on a fixed top-down court. Calibration
+metrics remain available in `calibrations.jsonl` without cluttering the video.
+
+The command also writes five JSONL files under
+`artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
+`court_detections.jsonl`, `calibrations.jsonl`, and
+`player_court_positions_raw.jsonl`, plus
+`player_court_positions_clean.jsonl`. Raw positions remain available for
+diagnosis and smoothing retuning. The environment must configure both the
+player and court models as described in `.env.example`.
+
+Use `--court-interval 5` to reduce hosted court-model calls if per-frame
+calibration is too slow. Failed frames temporarily hold the most recent valid
+transform for up to 15 frames.
+
+SAM 2 stores video frames and tracking history in CPU RAM by default to leave
+GPU memory available for inference. Its model still runs on the GPU. CPU
+storage can slow processing and increases host-memory use; it does not change
+the output resolution or playback FPS. Retired tracks are also removed from
+SAM 2's internal state. On a GPU with more memory, a custom runner can pass
+`offload_video_to_cpu=False` and/or `offload_state_to_cpu=False` to
+`Sam2PlayerTracker`.
+
+`PlayerTrackingPipeline.process_frame()` still returns masks; its
+`observations` attribute contains the latest frame's `PlayerObservation`
+records. Pass the video's actual `fps` when constructing the tracker (the
+standalone default is 30). Observations use the largest connected mask
+component and estimate the footpoint at the bottom, with x taken from the
+median of the lowest 5% of the component's height. When a live track has an
+empty or absent mask, its latest detector box supplies a provisional
+bottom-center footpoint. The observation remains marked missing and carries a
+`bbox_footpoint_fallback` flag so downstream cleanup can treat it accordingly.
+Detection confidence is recorded only on frames where that track was matched
+or created by the detector. Mask-derived observations retain
+`sam2_propagation` provenance; checkpoint re-prompts affect subsequent
+propagation. Masks remain in memory and `mask_ref` is unset.
+
+`SceneReconstructionPipeline` joins those observations with per-frame
+calibrations and returns a `SceneFrame`. Court detection runs every frame by
+default. When an interval is configured or a detection fails, it can hold the
+last valid calibration for up to 15 frames.
+Create a new tracking/scene pipeline per continuous segment; starting it
+resets calibration for that segment. Camera-cut detection is not automatic.
+
+The player detector defaults to confidence `0.66` and class-agnostic NMS at
+IoU `0.90`. It accepts the five player/action class names and excludes number,
+ball, referee, and rim classes. New detections must project within 30 cm of the
+court, appear at two consecutive detector checkpoints, and fit under the
+10-player live-track cap. Overlapping unmatched boxes at IoU `0.85` are treated
+as duplicate class predictions. Existing good SAM masks are only re-prompted
+when their association score falls below `0.75`.
+
+SAM masks receive the reference notebook's detached-component cleanup: keep
+the largest region and regions whose edge is within `0.03` of the image
+diagonal. A propagated mask farther than 100 cm outside the court is treated
+as missing and retires under the normal missing-track timeout.
+
+`court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
+and `clean_court_xy` in **centimeters**, plus the calibration source frame,
+age, and quality flags.
+Invalid calibration, missing footpoints, projection at infinity, and positions
+outside the court plus a configurable 100 cm margin produce a null position.
+Court landmarks use an aggressive EMA (`alpha=0.25`) before homography fitting.
+After projection, trajectories use robust speed filtering (`jump_sigma=3.5`,
+minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
+interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
+centered, so the minimap is replaced with cleaned positions in a lightweight
+second render pass after inference. Three.js export remains a future step.
+
