@@ -169,8 +169,11 @@ artifacts/<clip_id>/<segment_id>/
 ├── manifest.json
 ├── tracks.json
 ├── detections.jsonl
-├── observations.jsonl
-├── masks/<frame_idx>/<track_id>.png
+├── raw_observations.jsonl
+├── observations.jsonl             # finalized, authoritative records
+├── tracking_events.jsonl
+├── masks/raw/<frame_idx>/<track_id>.png
+├── masks/<frame_idx>/<track_id>.png # finalized masks
 └── debug/tracking.mp4
 ```
 
@@ -189,8 +192,18 @@ RF-DETR or SAM 2.
 - RF-DETR checkpoint interval, initially every five frames;
 - association minimum score `0.40`, equal IoU/center weights, correction
   re-prompt score below `0.75`, and duplicate IoU `0.85`;
-- at most 10 live player tracks and two checkpoint confirmations for entrants;
-- new-detection court margin `30 cm` and propagated-mask margin `100 cm`;
+- at most 10 published player tracks plus two private tentative SAM objects;
+- new-detection court margin `25 cm` and propagated-mask margin `75 cm`;
+- retire after `0.25 s` of consecutive nonempty masks rejected by the court filter;
+- permit capacity replacement after two detector hits below `0.72` when the
+  validated candidate's recent mean confidence is at least `0.15` higher;
+- entrants retain their RF-DETR evidence while the confirmed roster is full,
+  and become visible only after a distinct SAM mask and detector checkpoint
+  validate them;
+- duplicate masks at IoU `0.80` for three frames are arbitrated at the next
+  checkpoint unless two independent detector boxes support the pair;
+- finalized batch jobs use bounded reverse SAM 2 propagation (up to 30 frames)
+  to recover a newly confirmed player through its earlier candidate span;
 - detached SAM mask component edge distance `0.03` of the image diagonal;
 - maximum missing frames;
 - minimum and maximum valid mask area.

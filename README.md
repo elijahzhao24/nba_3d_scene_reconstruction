@@ -342,7 +342,9 @@ calibration is too slow. Failed frames temporarily hold the most recent valid
 transform for up to 15 frames.
 
 SAM 2 stores video frames and tracking history in CPU RAM by default to leave
-GPU memory available for inference. Its model still runs on the GPU. CPU
+GPU memory available for inference. Its model still runs on the GPU.
+CUDA model calls use autocast consistently across prompting and forward/backward
+propagation to keep cached memory compatible with the model weights. CPU
 storage can slow processing and increases host-memory use; it does not change
 the output resolution or playback FPS. Retired tracks are also removed from
 SAM 2's internal state. On a GPU with more memory, a custom runner can pass
@@ -372,16 +374,26 @@ resets calibration for that segment. Camera-cut detection is not automatic.
 
 The player detector defaults to confidence `0.66` and class-agnostic NMS at
 IoU `0.90`. It accepts the five player/action class names and excludes number,
-ball, referee, and rim classes. New detections must project within 30 cm of the
-court, appear at two consecutive detector checkpoints, and fit under the
-10-player live-track cap. Overlapping unmatched boxes at IoU `0.85` are treated
-as duplicate class predictions. Existing good SAM masks are only re-prompted
-when their association score falls below `0.75`.
+ball, referee, and rim classes. New detections must project within 25 cm of the court,
+then accrue repeated detector evidence before entering up to two private SAM
+validation slots. Final output is capped at 10 confirmed players; retained
+candidates can replace a missing or detector-unsupported incumbent, or one
+whose last two detector hits are below `0.72` when the candidate's recent mean
+confidence is at least `0.15` higher. Existing good SAM masks are only re-prompted when their association
+score falls below `0.75`.
+
+Batch rendering finalizes tracking before drawing the video. It persists raw
+detections, masks, and lifecycle events, suppresses sustained duplicate masks,
+and can propagate a late-confirmed player backward for up to 30 frames. Final
+observations use `sam2_backward_recovery` provenance where that recovery
+supplies the mask.
 
 SAM masks receive the reference notebook's detached-component cleanup: keep
 the largest region and regions whose edge is within `0.03` of the image
-diagonal. A propagated mask farther than 100 cm outside the court is treated
-as missing and retires under the normal missing-track timeout.
+diagonal. A propagated mask farther than 75 cm outside the court is treated
+as missing and retires after 0.25 seconds of consecutive court-filter rejections.
+Ordinary mask loss retains the normal missing-track timeout; unavailable court
+calibration interrupts the off-court rejection streak.
 
 `court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
 and `clean_court_xy` in **centimeters**, plus the calibration source frame,
@@ -394,4 +406,3 @@ minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
 interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
 centered, so the minimap is replaced with cleaned positions in a lightweight
 second render pass after inference. Three.js export remains a future step.
-

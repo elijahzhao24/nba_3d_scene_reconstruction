@@ -15,6 +15,14 @@ Point: TypeAlias = tuple[float, float]
 
 
 class TrackStatus(str, Enum):
+    """Lifecycle state for a SAM object.
+
+    Tentative tracks are allowed to consume a small, bounded amount of SAM
+    capacity while they prove that they are a distinct on-court player.  They
+    are deliberately not emitted to downstream consumers.
+    """
+
+    TENTATIVE = "tentative"
     ACTIVE = "active"
     MISSING = "missing"
     RETIRED = "retired"
@@ -23,6 +31,7 @@ class TrackStatus(str, Enum):
 class ObservationSource(str, Enum):
     SAM2_PROPAGATION = "sam2_propagation"
     RFDETR_REPROMPT = "rfdetr_reprompt"
+    SAM2_BACKWARD_RECOVERY = "sam2_backward_recovery"
     MISSING = "missing"
 
 

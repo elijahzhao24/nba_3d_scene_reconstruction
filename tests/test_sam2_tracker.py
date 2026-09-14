@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -19,6 +21,9 @@ class FakeTensor:
         return self
 
     def cpu(self) -> FakeTensor:
+        return self
+
+    def float(self) -> FakeTensor:
         return self
 
     def numpy(self) -> np.ndarray:
@@ -147,6 +152,51 @@ class Sam2PlayerTrackerTest(unittest.TestCase):
         np.testing.assert_array_equal(
             predictions[0].mask,
             np.asarray([[False, True], [True, False]]),
+        )
+
+    def test_precision_context_covers_reverse_generator_iteration(self) -> None:
+        self.tracker.start_segment("frames")
+        self.tracker.prompt_player(5, 7, (0, 0, 10, 20))
+        active = False
+
+        @contextmanager
+        def precision():
+            nonlocal active
+            active = True
+            try:
+                yield
+            finally:
+                active = False
+
+        def propagate(*args, **kwargs):
+            self.assertTrue(active)
+            yield 5, (7,), FakeTensor(np.ones((1, 1, 2, 2), dtype=np.float32))
+            self.assertTrue(active)
+
+        with patch.object(self.tracker, "_precision_context", precision), patch.object(
+            self.predictor, "propagate_in_video", propagate
+        ):
+            self.tracker.propagate_range(5, 3, reverse=True)
+        self.assertFalse(active)
+
+    def test_propagates_bounded_range_in_reverse_for_recovery(self) -> None:
+        self.predictor.output_object_ids = (7,)
+        self.predictor.output_mask_logits = np.ones((1, 1, 2, 2), dtype=np.float32)
+        self.tracker.start_segment("frames")
+        self.tracker.prompt_player(5, 7, (0, 0, 10, 20))
+
+        recovered = self.tracker.propagate_range(5, 3, reverse=True, track_ids=(7,))
+
+        self.assertEqual(set(recovered), {5})
+        self.assertEqual([item.track_id for item in recovered[5]], [7])
+        self.assertEqual(
+            self.predictor.propagate_calls[-1],
+            {
+                "state": self.predictor.state,
+                "start_frame_idx": 5,
+                "max_frame_num_to_track": 2,
+                "reverse": True,
+            },
         )
 
     def test_same_prompt_method_adds_and_corrects_players(self) -> None:

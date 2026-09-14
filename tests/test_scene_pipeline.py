@@ -15,7 +15,10 @@ from nba_3d_scene_reconstruction.court.configuration import (
     CourtDetectorConfiguration,
 )
 from nba_3d_scene_reconstruction.court.schemas import CalibrationSource
-from nba_3d_scene_reconstruction.pipeline import SceneReconstructionPipeline
+from nba_3d_scene_reconstruction.pipeline import (
+    DEFAULT_NEW_PLAYER_COURT_MARGIN_CM,
+    SceneReconstructionPipeline,
+)
 from nba_3d_scene_reconstruction.tracking.association_engine import (
     PlayerAssociationEngine,
 )
@@ -57,6 +60,9 @@ def make_scene(court_detector, calibrator=None, court_detector_interval=1):
 
 
 class ScenePipelineTest(unittest.TestCase):
+    def test_new_player_admission_allows_small_boundary_tolerance(self):
+        self.assertEqual(DEFAULT_NEW_PLAYER_COURT_MARGIN_CM, 25.0)
+
     def test_five_frame_checkpoints_hold_expire_and_recover(self):
         court = FakeCourtDetector(
             {0: synthetic_detection(0), 15: synthetic_detection(15)}

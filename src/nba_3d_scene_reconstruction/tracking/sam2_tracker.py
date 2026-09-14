@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import math
 import os
+from collections.abc import Iterable
+from contextlib import nullcontext
+from functools import wraps
 from typing import Any
 
 import cv2
@@ -13,6 +16,14 @@ from .schemas import BoundingBox, SamMaskPrediction
 
 SAM2_MODEL_ID = "facebook/sam2.1-hiera-small"
 DEFAULT_MASK_COMPONENT_RELATIVE_DISTANCE = 0.03
+
+
+def _with_predictor_precision(method):
+    @wraps(method)
+    def wrapped(self, *args, **kwargs):
+        with self._precision_context():
+            return method(self, *args, **kwargs)
+    return wrapped
 
 
 def filter_mask_segments_by_distance(
@@ -65,7 +76,13 @@ def _load_predictor() -> Any:
     # Import lazily so unit tests do not load PyTorch, CUDA, or model weights.
     from sam2.sam2_video_predictor import SAM2VideoPredictor
 
-    return SAM2VideoPredictor.from_pretrained(SAM2_MODEL_ID)
+    # Each pixel can belong to only one visible player.  Leaving this disabled
+    # lets two prompts collapse onto the same person and both emit the same
+    # mask, which is substantially worse than an honest temporary occlusion.
+    return SAM2VideoPredictor.from_pretrained(
+        SAM2_MODEL_ID,
+        non_overlap_masks=True,
+    )
 
 
 class Sam2PlayerTracker:
@@ -90,6 +107,7 @@ class Sam2PlayerTracker:
         """Return the player IDs currently known to SAM 2."""
         return frozenset(self._track_ids)
 
+    @_with_predictor_precision
     def start_segment(self, frames_dir: str | os.PathLike[str]) -> None:
         """Load an ordered directory of video frames into SAM 2."""
         if self._state is not None:
@@ -104,6 +122,7 @@ class Sam2PlayerTracker:
         )
         self._track_ids.clear()
 
+    @_with_predictor_precision
     def remove_player(self, track_id: int) -> None:
         """Release a retired object's SAM history without recomputing old masks."""
         state = self._require_state()
@@ -114,6 +133,7 @@ class Sam2PlayerTracker:
 
     # Existing ID's added to a set has no effect.
     # so prompt_player works for both addition and corrections
+    @_with_predictor_precision
     def prompt_player(
         self,
         frame_idx: int,
@@ -140,18 +160,54 @@ class Sam2PlayerTracker:
 
     def propagate_frame(self, frame_idx: int) -> tuple[SamMaskPrediction, ...]:
         """Ask SAM 2 for every tracked player's mask on one frame."""
-        if frame_idx < 0:
-            raise ValueError("frame_idx must be non-negative")
-        if not self._track_ids:
-            return ()
+        frames = self.propagate_range(frame_idx, frame_idx)
+        return frames.get(frame_idx, ())
 
+    @_with_predictor_precision
+    def propagate_range(
+        self,
+        start_frame_idx: int,
+        end_frame_idx: int,
+        *,
+        reverse: bool = False,
+        track_ids: Iterable[int] | None = None,
+    ) -> dict[int, tuple[SamMaskPrediction, ...]]:
+        """Propagate a bounded frame range in either temporal direction.
+
+        SAM2 owns a whole-video inference state, so reverse propagation is
+        inexpensive compared with loading a second model.  The returned map is
+        keyed by source frame index and only includes requested tracks.
+        """
+        if start_frame_idx < 0 or end_frame_idx < 0:
+            raise ValueError("frame indices must be non-negative")
+        if reverse and end_frame_idx > start_frame_idx:
+            raise ValueError("reverse propagation requires end <= start")
+        if not reverse and end_frame_idx < start_frame_idx:
+            raise ValueError("forward propagation requires end >= start")
+        if not self._track_ids:
+            return {}
+
+        selected_track_ids = (
+            self._track_ids if track_ids is None else self._track_ids.intersection(track_ids)
+        )
+        if not selected_track_ids:
+            return {}
+
+        maximum_frames = abs(end_frame_idx - start_frame_idx)
+        predictions_by_frame: dict[int, tuple[SamMaskPrediction, ...]] = {}
+
+        propagate_kwargs: dict[str, object] = {
+            "start_frame_idx": start_frame_idx,
+            "max_frame_num_to_track": maximum_frames,
+        }
+        if reverse:
+            propagate_kwargs["reverse"] = True
         outputs = self.predictor.propagate_in_video(
             self._require_state(),
-            start_frame_idx=frame_idx,
-            max_frame_num_to_track=0,
+            **propagate_kwargs,
         )
         for output_frame_idx, object_ids, mask_logits in outputs:
-            masks = mask_logits.detach().cpu().numpy()
+            masks = mask_logits.detach().float().cpu().numpy()
             if masks.ndim != 4 or masks.shape[1] != 1:
                 raise ValueError("SAM 2 masks must have shape [objects, 1, H, W]")
             if masks.shape[0] != len(object_ids):
@@ -159,16 +215,28 @@ class Sam2PlayerTracker:
                     "SAM 2 returned a different number of masks and object IDs"
                 )
 
-            return tuple(
+            predictions_by_frame[int(output_frame_idx)] = tuple(
                 SamMaskPrediction(
                     frame_idx=output_frame_idx,
                     track_id=int(track_id),
                     mask=filter_mask_segments_by_distance(masks[index, 0] > 0.0),
                 )
                 for index, track_id in enumerate(object_ids)
+                if int(track_id) in selected_track_ids
             )
+        return predictions_by_frame
 
-        return ()
+    def _precision_context(self):
+        # SAM stores memory features as bfloat16 even with float32 weights.
+        # Keep autocast active while the propagation generator is consumed,
+        # including reverse passes that revisit cached memory.
+        device = getattr(self.predictor, "device", None)
+        if getattr(device, "type", None) != "cuda":
+            return nullcontext()
+        import torch
+
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
+        return torch.autocast("cuda", dtype=dtype)
 
     def _require_state(self) -> object:
         if self._state is None:

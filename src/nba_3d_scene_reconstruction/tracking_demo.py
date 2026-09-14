@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 from contextlib import ExitStack
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
@@ -49,6 +49,22 @@ def render_tracking_video(
         frame_count = min(frame_count, max_frames)
     if frame_count == 0:
         raise ValueError("the video contains no frames")
+
+    # Player tracking is an offline-capable job.  Run inference first, allow
+    # duplicate arbitration/backward recovery, then make the visible output
+    # from finalized artifacts.  Lightweight fake pipelines used by callers
+    # and tests retain the original one-pass rendering behavior below.
+    if hasattr(pipeline, "finalize_segment") and hasattr(
+        pipeline, "configure_artifacts"
+    ):
+        return _render_finalized_tracking_video(
+            manifest,
+            pipeline,
+            output_path,
+            frame_count=frame_count,
+            records_dir=records_dir,
+            smoothing_configuration=smoothing_configuration,
+        )
 
     destination = Path(output_path)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -179,6 +195,134 @@ def render_tracking_video(
         if raw_destination is not None:
             raw_destination.unlink(missing_ok=True)
 
+    return destination
+
+
+def _render_finalized_tracking_video(
+    manifest: VideoManifest,
+    pipeline: Any,
+    output_path: str | Path,
+    *,
+    frame_count: int,
+    records_dir: str | Path | None,
+    smoothing_configuration: TrajectorySmoothingConfiguration | None,
+) -> Path:
+    """Infer, finalize, then render the authoritative artifact-backed output."""
+    destination = Path(output_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    suffix = destination.suffix.lower()
+    if suffix == ".webm":
+        codec = "VP80"
+    elif suffix == ".mp4":
+        codec = "mp4v"
+    else:
+        raise ValueError("output path must end in .webm or .mp4")
+
+    artifact_root = (
+        Path(records_dir)
+        if records_dir is not None
+        else destination.parent / f"{destination.stem}_artifacts"
+    )
+    pipeline.configure_artifacts(str(artifact_root))
+    pipeline.start_segment(manifest.frames_dir)
+    for frame_idx in range(frame_count):
+        frame_path = Path(manifest.frames_dir) / f"{frame_idx:06d}.jpg"
+        frame = cv2.imread(str(frame_path))
+        if frame is None:
+            raise OSError(f"could not read extracted frame: {frame_path}")
+        pipeline.process_frame(frame, frame_idx)
+
+    finalized = pipeline.finalize_segment()
+    is_scene = isinstance(pipeline, SceneReconstructionPipeline)
+    position_frames: tuple[tuple[PlayerCourtPosition, ...], ...] = ()
+    cleaned_frames: tuple[tuple[PlayerCourtPosition, ...], ...] = ()
+    court_renderer: CourtDebugRenderer | None = None
+    if is_scene:
+        court_renderer = CourtDebugRenderer(
+            pipeline.calibrator.estimator.detector_configuration
+        )
+        position_frames = tuple(
+            finalized[frame_idx].positions for frame_idx in range(frame_count)
+        )
+        cleaned_frames = clean_player_position_frames(
+            position_frames,
+            configuration=smoothing_configuration,
+        )
+
+    if records_dir is not None:
+        root = Path(records_dir)
+        root.mkdir(parents=True, exist_ok=True)
+        streams = {
+            name: (root / f"{name}.jsonl").open("w", encoding="utf-8")
+            for name in (
+                "observations",
+                "court_detections",
+                "calibrations",
+                "player_court_positions_raw",
+                "player_court_positions_clean",
+            )
+        }
+        try:
+            for frame_idx in range(frame_count):
+                if is_scene:
+                    scene = finalized[frame_idx]
+                    records = {
+                        "observations": scene.observations,
+                        "court_detections": (
+                            () if scene.court_detection is None else (scene.court_detection,)
+                        ),
+                        "calibrations": (scene.calibration,),
+                        "player_court_positions_raw": scene.positions,
+                        "player_court_positions_clean": cleaned_frames[frame_idx],
+                    }
+                else:
+                    records = {
+                        "observations": finalized[frame_idx],
+                        "court_detections": (),
+                        "calibrations": (),
+                        "player_court_positions_raw": (),
+                        "player_court_positions_clean": (),
+                    }
+                for name, values in records.items():
+                    for value in values:
+                        streams[name].write(json.dumps(asdict(value), allow_nan=False) + "\n")
+        finally:
+            for stream in streams.values():
+                stream.close()
+
+    fps = manifest.fps if manifest.fps > 0 else 30.0
+    writer: cv2.VideoWriter | None = None
+    try:
+        for frame_idx in range(frame_count):
+            frame_path = Path(manifest.frames_dir) / f"{frame_idx:06d}.jpg"
+            frame = cv2.imread(str(frame_path))
+            if frame is None:
+                raise OSError(f"could not read extracted frame: {frame_path}")
+            if is_scene:
+                scene = finalized[frame_idx]
+                rendered = court_renderer.render(
+                    frame,
+                    replace(scene, positions=cleaned_frames[frame_idx]),
+                    fps=fps,
+                )
+            else:
+                rendered = draw_tracking_overlay(
+                    frame,
+                    pipeline.finalized_masks_for_frame(frame_idx),
+                )
+            if writer is None:
+                writer = cv2.VideoWriter(
+                    str(destination),
+                    cv2.VideoWriter_fourcc(*codec),
+                    fps,
+                    (rendered.shape[1], rendered.shape[0]),
+                )
+                if not writer.isOpened():
+                    raise OSError(f"could not create output video: {destination}")
+            writer.write(rendered)
+    finally:
+        if writer is not None:
+            writer.release()
     return destination
 
 

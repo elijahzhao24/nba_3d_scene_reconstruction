@@ -15,8 +15,8 @@ from .tracking.observations import mask_footpoint
 from .tracking.pipeline import PlayerTrackingPipeline
 from .tracking.schemas import PlayerDetection, PlayerObservation, SamMaskPrediction
 
-DEFAULT_NEW_PLAYER_COURT_MARGIN_CM = 30.0
-DEFAULT_TRACKED_MASK_COURT_MARGIN_CM = 100.0
+DEFAULT_NEW_PLAYER_COURT_MARGIN_CM = 25.0
+DEFAULT_TRACKED_MASK_COURT_MARGIN_CM = 75.0
 
 
 @dataclass(frozen=True)
@@ -66,6 +66,12 @@ class SceneReconstructionPipeline:
         self.new_player_court_margin_cm = new_player_court_margin_cm
         self.tracked_mask_court_margin_cm = tracked_mask_court_margin_cm
         self.segment_id = tracking_pipeline.track_manager.segment_id
+        self._scene_history: dict[int, tuple[CourtDetection | None, CourtCalibration]] = {}
+        self.finalized_frames: dict[int, SceneFrame] = {}
+
+    def configure_artifacts(self, artifact_dir: str) -> None:
+        """Delegate durable tracking artifacts to the player subsystem."""
+        self.tracking_pipeline.configure_artifacts(artifact_dir)
 
     def start_segment(self, frames_dir: str) -> None:
         """Start a fresh tracker and clear calibration for this segment."""
@@ -119,10 +125,28 @@ class SceneReconstructionPipeline:
             mask_filter=mask_filter,
         )
         observations = self.tracking_pipeline.observations
-        return SceneFrame(
+        result = SceneFrame(
             masks=masks,
             observations=observations,
             court_detection=detection,
             calibration=calibration,
             positions=self.projector.project(observations, calibration),
         )
+        self._scene_history[frame_idx] = (detection, calibration)
+        return result
+
+    def finalize_segment(self) -> dict[int, SceneFrame]:
+        """Reproject finalized tracker observations with their frame calibration."""
+        observations_by_frame = self.tracking_pipeline.finalize_segment()
+        finalized: dict[int, SceneFrame] = {}
+        for frame_idx, observations in observations_by_frame.items():
+            detection, calibration = self._scene_history[frame_idx]
+            finalized[frame_idx] = SceneFrame(
+                masks=self.tracking_pipeline.finalized_masks_for_frame(frame_idx),
+                observations=observations,
+                court_detection=detection,
+                calibration=calibration,
+                positions=self.projector.project(observations, calibration),
+            )
+        self.finalized_frames = finalized
+        return finalized
