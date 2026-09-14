@@ -8,8 +8,7 @@
 
 **Player tracking and unique identification + Homography and court projection:**
 
-https://github.com/user-attachments/assets/a1dcea44-8aba-41a1-be09-47d6963e854d
-
+[court_debug_tuned.webm](https://github.com/user-attachments/assets/9f83eee1-bb12-436e-a63e-4a2500668005)
 
 **Pose estimation + Lifing (WIP)**
 
