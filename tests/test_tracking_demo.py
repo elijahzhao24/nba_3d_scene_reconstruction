@@ -123,6 +123,11 @@ class TrackingDemoTest(unittest.TestCase):
                 manifest,
                 frames_dir=str(root / manifest.frames_dir),
             )
+            manifest_record = (
+                root / "artifacts" / "source" / "segment_001" / "video_manifest.json"
+            )
+            self.assertTrue(manifest_record.exists())
+            self.assertEqual(json.loads(manifest_record.read_text())["frame_count"], 3)
 
             pipeline = FakeTrackingPipeline()
             output = render_tracking_video(

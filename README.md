@@ -303,8 +303,7 @@ data contract is stable.
 - Tracker and segmentation interface
 - Team assignment pipeline
 - [Court landmark and homography calibration](/LLDS/COURT_HOMOGRAPHY_CALIBRATION.md)
-- 2D pose estimator interface
-- 3D pose lifter interface
+- [2D pose estimation and local 3D lifting](/LLDS/POSE_ESTIMATION.md)
 - Temporal correction algorithms
 - Skeleton-to-rig retargeting
 - Animation export API

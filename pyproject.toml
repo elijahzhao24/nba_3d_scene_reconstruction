@@ -18,6 +18,7 @@ gpu = [
 
 [project.scripts]
 tracking-demo = "nba_3d_scene_reconstruction.tracking_demo:main"
+pose-demo = "nba_3d_scene_reconstruction.pose_demo:main"
 
 [build-system]
 requires = ["setuptools>=77"]

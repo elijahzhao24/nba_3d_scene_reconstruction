@@ -1,8 +1,13 @@
-import cv2
+import json
 import os
+from dataclasses import asdict
+
+import cv2
+
 from nba_3d_scene_reconstruction.tracking.schemas import VideoManifest
 
-def processNewVideo(video_path:str) -> VideoManifest:
+
+def processNewVideo(video_path: str) -> VideoManifest:
     capture = cv2.VideoCapture(video_path)
 
     if not capture.isOpened():
@@ -33,7 +38,7 @@ def processNewVideo(video_path:str) -> VideoManifest:
 
     capture.release()
 
-    return VideoManifest(
+    manifest = VideoManifest(
         clip_id=clip_id,
         segment_id=segment_id,
         source_path=video_path,
@@ -43,3 +48,8 @@ def processNewVideo(video_path:str) -> VideoManifest:
         height=height,
         frame_count=frame_count,
     )
+    manifest_path = os.path.join(os.path.dirname(frames_dir), "video_manifest.json")
+    with open(manifest_path, "w", encoding="utf-8") as stream:
+        json.dump(asdict(manifest), stream, indent=2)
+        stream.write("\n")
+    return manifest
