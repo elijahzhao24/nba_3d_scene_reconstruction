@@ -10,7 +10,11 @@
 
 [court_debug_tuned.webm](https://github.com/user-attachments/assets/9f83eee1-bb12-436e-a63e-4a2500668005)
 
-**Pose estimation + Lifing (WIP)**
+**Pose estimation + Lifing:
+
+https://github.com/user-attachments/assets/a4810d3d-3725-42b2-8dcd-53b129697d93
+
+**
 
 **Visalize to Three.js (WIP)**
 
