@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#10191b" />
+    <title>Court Replay</title>
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="wordmark">
+        <span class="court-mark" aria-hidden="true"></span>
+        <h1>Court Replay</h1>
+      </div>
+      <div class="source">
+        <span id="clip-name" class="clip-name">No scene loaded</span>
+        <button type="button" class="open-button" id="open">Open scene</button>
+        <input type="file" id="scene-file" accept=".json,application/json" hidden />
+      </div>
+    </header>
+    <main class="workspace">
+      <p id="load-message" class="load-message" role="status">Open a scene JSON file exported from the reconstruction CLI.</p>
+      <section id="replay" class="replay" aria-label="Court replay">
+        <header class="replay-header">
+          <div class="views" aria-label="Camera views" role="group">
+            <button type="button" id="top-down" aria-pressed="true">Top down</button>
+            <button type="button" id="orbit" aria-pressed="false">Orbit</button>
+            <button type="button" id="pov" aria-pressed="false" disabled>Player POV</button>
+          </div>
+          <div class="player-views" aria-label="Player display" role="group">
+            <button type="button" id="players" aria-pressed="false" disabled>Players</button>
+            <button type="button" id="skeletons" aria-pressed="false" disabled>Skeletons</button>
+            <button type="button" id="markers" aria-pressed="true" disabled>Markers</button>
+          </div>
+          <div id="view-hint" class="view-hint" aria-hidden="true" hidden>Drag to rotate · Scroll to zoom</div>
+          <div class="player-count"><span id="player-count">—</span> visible players</div>
+          <button type="button" id="fullscreen" class="fullscreen-button" aria-controls="replay" disabled>Fullscreen</button>
+        </header>
+        <div id="pov-controls" class="pov-controls" hidden>
+          <label for="pov-track">Follow player</label>
+          <select id="pov-track"></select>
+          <span id="pov-status" role="status" hidden></span>
+        </div>
+        <p id="model-message" class="model-message" role="status" hidden></p>
+        <div id="viewport" class="viewport" aria-label="3D basketball court">
+          <p id="renderer-error" class="renderer-error" hidden></p>
+          <span class="court-size" id="court-size">28.65 × 15.24 m</span>
+        </div>
+        <div class="transport" aria-label="Playback controls">
+          <div class="playback-buttons">
+            <button type="button" id="previous" class="step-button" aria-label="Previous frame" disabled>‹</button>
+            <button type="button" id="play" class="play-button" disabled>Play</button>
+            <button type="button" id="next" class="step-button" aria-label="Next frame" disabled>›</button>
+          </div>
+          <div class="timeline">
+            <div class="timeline-readout">
+              <label for="frame">Frame <output id="frame-index" for="frame">—</output></label>
+              <span class="timecode"><output id="elapsed" for="frame">0.00</output><span id="duration">/ 0.00 s</span></span>
+            </div>
+            <input type="range" id="frame" min="0" max="0" step="1" value="0" disabled />
+          </div>
+        </div>
+        <div id="ball-editor"></div>
+        <details class="pose-alignment" id="pose-alignment" hidden>
+          <summary>Pose alignment</summary>
+          <div class="pose-settings">
+            <p id="pose-alignment-status"></p>
+            <div class="pose-setting">
+              <label for="pose-yaw">Yaw</label>
+              <output id="yaw-value" for="pose-yaw"></output>
+              <input type="range" id="pose-yaw" min="-180" max="180" step="0.1" value="0" />
+            </div>
+            <div class="pose-setting">
+              <label for="pose-pitch">Down tilt</label>
+              <output id="pitch-value" for="pose-pitch"></output>
+              <input type="range" id="pose-pitch" min="-90" max="90" step="0.1" value="0" />
+            </div>
+            <button type="button" id="reset-pose">Reset angle</button>
+          </div>
+        </details>
+      </section>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

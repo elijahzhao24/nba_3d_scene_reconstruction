@@ -21,6 +21,9 @@ venv/
 artifacts/
 uploads/
 
+# Three.js viewer
+viewer/node_modules/
+
 # Editors and operating systems
 .vscode/
 .idea/

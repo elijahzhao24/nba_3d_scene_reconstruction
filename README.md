@@ -226,6 +226,9 @@ internal source of truth.
 
 ### Three.js Animation Schema
 
+The current viewer uses the scene replay format documented below. This example
+shows the planned animation format for rigged players and the ball.
+
 The viewer should receive a compact animation schema, not the full processing
 schema. It should only include assets, player identities, team colors, root
 transforms, rig bone rotations, and any generated ball animation. Detector
@@ -407,4 +410,79 @@ After projection, trajectories use robust speed filtering (`jump_sigma=3.5`,
 minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
 interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
 centered, so the minimap is replaced with cleaned positions in a lightweight
-second render pass after inference. Three.js export remains a future step.
+second render pass after inference.
+
+### Replay a processed clip in Three.js
+
+Run tracking with `--court-projection` to generate the segment artifacts. Then
+export the saved results and start the viewer from the repository root:
+
+```bash
+uv run export-scene artifacts/test_video/segment_001 \
+  --source-video test_video.webm \
+  --output artifacts/test_video/scene.json
+npm --prefix viewer ci
+npm --prefix viewer run dev
+```
+
+Open the local URL printed by Vite and use **Open scene** to select
+`artifacts/test_video/scene.json`. The viewer reads that file locally and uses
+its frame times for playback. Use **Top down** to compare the replay with the
+minimap, or **Orbit** to rotate and zoom around the court. The viewer requires
+WebGL 2. Its Node.js requirements are listed in `viewer/package.json`.
+
+`export-scene` uses `video_manifest.json` when present. The older `test_video`
+artifacts need `--source-video` for video metadata. Each exported frame contains
+the visible players with valid cleaned positions, represented as track IDs
+and centered `[x, 0, z]` coordinates in meters. The exporter also copies any
+matching lifted joints from `poses_3d_local.jsonl` with metadata that declares
+their pelvis-relative camera axes and model units.
+
+When poses are available, **Players** animates a bundled, generic skinned player
+model. The viewer maps joint directions to the model's bones and preserves its
+proportions. Each track has its own rig, and all tracks use the same uniform.
+Use **Skeletons** to inspect the 17-joint poses or **Markers** to compare
+court positions. Missing or implausibly scaled poses keep their floor markers.
+The viewer normalizes pose scale once per lifting sequence and grounds the
+lower foot as an approximation.
+
+The source for the bundled player is `viewer/tools/generate_player.py`.
+Run `python3 viewer/tools/generate_player.py` to regenerate the GLB after edits.
+
+When the saved court calibration supports it, the exporter includes one
+estimated source camera angle for the segment. Open **Pose alignment** to
+adjust yaw or down tilt. This preview uses one orientation through broadcast
+pans and approximates players as grounded, so jump height is unresolved. Older
+scene exports still open and can be aligned manually.
+
+### Watch from a player's POV
+
+With a scene containing player poses open, choose **Player POV**, pick a track
+under **Follow player**, and scrub or play. The camera uses the estimated head
+position and body facing direction. It switches to Orbit for frames where that
+track has no usable pose and resumes POV when the pose returns.
+
+Choose **Fullscreen** above the court for a larger playback view. The camera
+controls and timeline are still available. Use **Exit fullscreen** or press
+`Esc` to return to editing.
+
+### Add ball keyframes
+
+Open **Ball editor** below the replay timeline. **Hold in hand** attaches the
+ball to the selected player's left or right hand until the next action.
+
+At the release frame, choose **Start dribble**, **Start pass**, or **Start shot**
+and select the releasing hand. Scrub to a later video frame and add the matching
+end marker as the next ball keyframe.
+
+- **End dribble** chooses the receiving hand. The ball bounces once halfway
+  between the two keyframes.
+- **End pass** chooses the receiving hand. The ball travels straight between the
+  two hand positions.
+- **End shot** chooses the hoop. The ball takes a high arc through the rim and
+  finishes below it at the end frame.
+
+After a dribble or pass, the ball follows the receiving hand until the next
+action. Click a list row to seek to its keyframe. **Export ball JSON** saves the
+edits separately from the scene. Open the same scene and use **Import ball JSON**
+to load edits or convert an older ball file to start and end markers.
