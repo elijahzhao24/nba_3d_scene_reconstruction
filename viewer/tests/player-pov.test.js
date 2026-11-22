@@ -59,6 +59,14 @@ test('turns the POV with the reconstructed player in court coordinates', () => {
   assertVector(view.direction, [-1, 0, 0]);
 });
 
+test('passes authored look targets to the POV camera', () => {
+  const frame = makeFrame();
+  frame.players[0].look_at = { target: [12.725, 3.048, 0], weight: 0.5 };
+  const view = playerPov(frame, 7, makePose());
+  assertVector(view.eye, [2, 0.99, 6.1]);
+  assert.deepEqual(view.lookAt, frame.players[0].look_at);
+});
+
 test('falls back to the hips when the shoulders collapse in the pose', () => {
   const frame = makeFrame({ left_shoulder: joints.right_shoulder });
   assertVector(playerPov(frame, 7, makePose()).direction, [0, 0, 1]);

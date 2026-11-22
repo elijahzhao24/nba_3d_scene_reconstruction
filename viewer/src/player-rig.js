@@ -134,7 +134,7 @@ export function bindPlayerRig(object) {
   };
 }
 
-export function placePlayerRig(rig, p, points, layout) {
+export function placePlayerRig(rig, p, points, layout, lookAt) {
   if (!rig || !Array.isArray(p) || p.length !== 3 || !p.every(Number.isFinite) || !points || !layout?.index) {
     return false;
   }
@@ -193,5 +193,10 @@ export function placePlayerRig(rig, p, points, layout) {
     p[1] - soleY,
     p[2] - (leftFoot.z + rightFoot.z) * 0.5,
   );
+  bones.head.quaternion.copy(rest.head);
+  if (lookAt?.weight > 0) {
+    bones.head.lookAt(...lookAt.target);
+    bones.head.quaternion.slerp(rest.head, 1 - lookAt.weight);
+  }
   return true;
 }

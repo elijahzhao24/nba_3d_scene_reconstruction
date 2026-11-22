@@ -25,7 +25,7 @@ repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 image="nba-reconstruction:local"
 
 build_image() {
-  docker build --platform linux/amd64 -t "$image" "$repo_dir"
+  docker build --progress=plain --platform linux/amd64 -t "$image" "$repo_dir"
 }
 
 if [[ $# -eq 1 && $1 == --build ]]; then

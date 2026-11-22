@@ -22,7 +22,7 @@ function blendFacing(shoulders, hips) {
   return [x / length, z / length];
 }
 
-// This estimates body facing, since the exported skeleton does not capture gaze.
+// Use the reconstructed body for the eye position and carry any authored gaze target.
 export function playerPov(frame, trackId, pose) {
   if (!pose?.layout || !Number.isSafeInteger(trackId)) return null;
   const player = frame?.players?.find(({ id }) => id === trackId);
@@ -48,5 +48,6 @@ export function playerPov(frame, trackId, pose) {
       rootZ + headZ + z * EYE_FORWARD_M,
     ],
     direction: [x, 0, z],
+    lookAt: player.look_at,
   };
 }

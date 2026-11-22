@@ -8,10 +8,10 @@ import { groundPose, poseScaleKey } from './player-pose.js';
 import { SkeletonView } from './skeleton-view.js';
 
 export class CourtView {
-  constructor(viewport) {
+  constructor(viewport, { reflection = true, maxPixelRatio = 2 } = {}) {
     this.viewport = viewport;
     this.renderer = new THREE.WebGLRenderer({ antialias: true });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, maxPixelRatio));
     this.renderer.domElement.setAttribute('aria-hidden', 'true');
     this.labels = new CSS2DRenderer();
     this.labels.domElement.className = 'court-labels';
@@ -35,6 +35,7 @@ export class CourtView {
     this.orbitCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 300);
     this.povCamera = new THREE.PerspectiveCamera(95, 1, 0.06, 150);
     this.povTarget = new THREE.Vector3();
+    this.povBaseRotation = new THREE.Quaternion();
     this.povReady = false;
     this.controls = new OrbitControls(this.orbitCamera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -52,8 +53,8 @@ export class CourtView {
     this.shadowMaterial = new THREE.MeshBasicMaterial({
       color: 0x000000, opacity: 0.36, transparent: true, depthWrite: false,
     });
-    this.enableReflection = this.renderer.extensions.has('EXT_color_buffer_float')
-      || this.renderer.extensions.has('EXT_color_buffer_half_float');
+    this.enableReflection = reflection && (this.renderer.extensions.has('EXT_color_buffer_float')
+      || this.renderer.extensions.has('EXT_color_buffer_half_float'));
     this.hasPlayers = false;
     this.hasBall = false;
     this.setCourt(DEFAULT_COURT);
@@ -67,6 +68,7 @@ export class CourtView {
     if (!width || !height) return;
     this.renderer.setSize(width, height, false);
     this.labels.setSize(width, height);
+    this.needsRender = true;
     const aspect = width / height;
     this.orbitCamera.aspect = aspect;
     this.orbitCamera.updateProjectionMatrix();
@@ -121,15 +123,17 @@ export class CourtView {
     this.updateActiveCamera();
   }
 
-  setPlayerPov(pov, tilt = 0) {
+  setPlayerPov(pov) {
     this.povReady = Boolean(pov);
     if (pov) {
       this.povCamera.position.fromArray(pov.eye);
-      const angle = THREE.MathUtils.degToRad(tilt);
-      this.povTarget.fromArray(pov.direction).multiplyScalar(Math.cos(angle));
-      this.povTarget.y = -Math.sin(angle);
-      this.povTarget.add(this.povCamera.position);
+      this.povTarget.fromArray(pov.direction).add(this.povCamera.position);
       this.povCamera.lookAt(this.povTarget);
+      if (pov.lookAt?.weight > 0) {
+        this.povBaseRotation.copy(this.povCamera.quaternion);
+        this.povCamera.lookAt(...pov.lookAt.target);
+        this.povCamera.quaternion.slerp(this.povBaseRotation, 1 - pov.lookAt.weight);
+      }
     }
     if (this.mode === 'pov') this.updateActiveCamera();
   }
@@ -207,18 +211,18 @@ export class CourtView {
     this.playerMeshes.hidePlayers();
     for (const { group } of this.markers.values()) group.visible = false;
     for (const player of players) {
-      const { id, p, joints } = player;
+      const { id, p, joints, look_at: lookAt } = player;
       const handsOnly = id === povTrack;
       const points = (handsOnly || display !== 'markers') && pose
         && groundPose(joints, pose.layout, pose.scales.get(poseScaleKey(player)), pose.basis);
       if (handsOnly) {
-        if (points) this.playerMeshes.showPlayer(id, p, points, pose.layout, true);
+        if (points) this.playerMeshes.showPlayer(id, p, points, pose.layout, { handsOnly: true });
         continue;
       }
       const { group, label, disc, border, shadow } = this.markers.get(id) ?? this.addMarker(id);
       group.position.fromArray(p);
       group.visible = true;
-      const hasMesh = points && display === 'players' && this.playerMeshes.showPlayer(id, p, points, pose.layout);
+      const hasMesh = points && display === 'players' && this.playerMeshes.showPlayer(id, p, points, pose.layout, { lookAt });
       if (points && !hasMesh) poses.push({ p, points });
       disc.visible = border.visible = !hasMesh;
       shadow.visible = Boolean(hasMesh);
@@ -236,5 +240,6 @@ export class CourtView {
     }
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
+    this.needsRender = false;
   }
 }

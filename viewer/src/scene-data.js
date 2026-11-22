@@ -34,6 +34,13 @@ export function readScene(text) {
           || !Array.isArray(player.p) || player.p.length !== 3 || !player.p.every(Number.isFinite)) {
         throw new Error(`Frame ${frame.frame_idx} has an invalid or duplicate player.`);
       }
+      if (player.look_at !== undefined) {
+        const { target, weight } = player.look_at ?? {};
+        if (!Array.isArray(target) || target.length !== 3 || !target.every(Number.isFinite)
+            || !Number.isFinite(weight) || weight < 0 || weight > 1) {
+          throw new Error(`Frame ${frame.frame_idx} has an invalid look target for player ${player.id}.`);
+        }
+      }
       ids.add(player.id);
     }
     previousIndex = frame.frame_idx;

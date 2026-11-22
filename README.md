@@ -482,10 +482,10 @@ scene exports still open and can be aligned manually.
 
 With a scene containing player poses open, choose **Player POV**, pick a track
 under **Follow player**, and scrub or play. The camera uses the estimated head
-position and body facing direction with a 95° field of view. The selected
-player's animated hands and forearms are visible in this view. Use **Look down**
-to bring lowered hands into frame. The camera switches to Orbit when the
-selected track has no usable pose and resumes POV when the pose returns.
+position and body facing direction with a 95° field of view and a level base
+angle. It follows any authored gaze targets in the scene. The player's hands
+and forearms can come into view. The camera switches to Orbit when the selected
+track has no usable pose and resumes POV when the pose returns.
 
 Choose **Fullscreen** above the court for a larger playback view. The camera
 controls and timeline are still available. Use **Exit fullscreen** or press

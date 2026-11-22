@@ -77,6 +77,21 @@ test('preserves the neutral rig and translates it to the floor marker', () => {
   }
 });
 
+test('aims the head toward a world target and resets it when seeking back', () => {
+  const { rig, bones, points } = fixture();
+  const origin = [3, 0, -2];
+  const target = [12, 3, 0];
+  assert.ok(placePlayerRig(rig, origin, points, layout));
+  const neutral = bones.head.getWorldDirection(new Vector3());
+  const wrist = position(bones.right_wrist);
+  assert.ok(placePlayerRig(rig, origin, points, layout, { target, weight: 1 }));
+  const towardRim = new Vector3(...target).sub(position(bones.head)).normalize();
+  assertVector(bones.head.getWorldDirection(new Vector3()), towardRim.toArray());
+  assertVector(position(bones.right_wrist), wrist.toArray());
+  assert.ok(placePlayerRig(rig, origin, points, layout));
+  assertVector(bones.head.getWorldDirection(new Vector3()), neutral.toArray());
+});
+
 test('aims bone rotations while retaining bind lengths and grounding the lowest sole', () => {
   const { rig, bones, points } = fixture();
   points[layout.index.left_knee] = [0.25, 0.65, 0.55];

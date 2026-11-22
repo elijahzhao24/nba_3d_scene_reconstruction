@@ -1,0 +1,110 @@
+{
+  "version": 2,
+  "clip_id": "test_video",
+  "segment_id": "segment_001",
+  "keyframes": [
+    {
+      "kind": "dribble",
+      "start_frame": 0,
+      "end_frame": 18,
+      "from": {
+        "track_id": 6,
+        "hand": "left"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "right"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 41,
+      "end_frame": 53,
+      "from": {
+        "track_id": 6,
+        "hand": "right"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "right"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 66,
+      "end_frame": 75,
+      "from": {
+        "track_id": 6,
+        "hand": "right"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "left"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 79,
+      "end_frame": 99,
+      "from": {
+        "track_id": 6,
+        "hand": "left"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "right"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 107,
+      "end_frame": 123,
+      "from": {
+        "track_id": 6,
+        "hand": "right"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "left"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 126,
+      "end_frame": 132,
+      "from": {
+        "track_id": 6,
+        "hand": "left"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "right"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 142,
+      "end_frame": 156,
+      "from": {
+        "track_id": 6,
+        "hand": "right"
+      },
+      "to": {
+        "track_id": 6,
+        "hand": "right"
+      }
+    },
+    {
+      "kind": "shot",
+      "start_frame": 178,
+      "end_frame": 206,
+      "from": {
+        "track_id": 6,
+        "hand": "right"
+      },
+      "to": {
+        "hoop": "right"
+      }
+    }
+  ]
+}

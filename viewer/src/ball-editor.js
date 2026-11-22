@@ -117,20 +117,20 @@ export class BallEditor {
     this.ui.exportButton.addEventListener('click', () => this.exportFile());
   }
 
-  setScene(scene) {
+  setScene(scene, { demoId = null, initialKeyframes = [] } = {}) {
     this.importVersion += 1;
     this.scene = scene;
     this.frame = null;
     this.draft = initialDraft();
     this.pending = null;
     this.editing = null;
-    this.sceneKey = JSON.stringify([scene.clip_id, scene.segment_id]);
+    this.sceneKey = JSON.stringify([demoId, scene.clip_id, scene.segment_id]);
     this.frames = new Map(scene.frames.map((frame) => [frame.frame_idx, frame]));
     this.ui.panel.hidden = false;
     this.setFeedback('');
     let keyframes;
     try {
-      keyframes = validateBallKeyframes(this.edits.get(this.sceneKey) ?? [], scene);
+      keyframes = validateBallKeyframes(this.edits.get(this.sceneKey) ?? initialKeyframes, scene);
     } catch {
       keyframes = [];
       this.setFeedback('The saved session keyframes no longer match this scene.', true);

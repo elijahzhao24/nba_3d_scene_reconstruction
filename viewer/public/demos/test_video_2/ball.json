@@ -1,0 +1,66 @@
+{
+  "version": 2,
+  "clip_id": "test_video_2",
+  "segment_id": "segment_001",
+  "keyframes": [
+    {
+      "kind": "hold",
+      "frame_idx": 37,
+      "anchor": {
+        "track_id": 6,
+        "hand": "right"
+      }
+    },
+    {
+      "kind": "pass",
+      "start_frame": 49,
+      "end_frame": 83,
+      "from": {
+        "track_id": 6,
+        "hand": "right"
+      },
+      "to": {
+        "track_id": 5,
+        "hand": "left"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 119,
+      "end_frame": 137,
+      "from": {
+        "track_id": 5,
+        "hand": "left"
+      },
+      "to": {
+        "track_id": 5,
+        "hand": "left"
+      }
+    },
+    {
+      "kind": "dribble",
+      "start_frame": 150,
+      "end_frame": 174,
+      "from": {
+        "track_id": 5,
+        "hand": "left"
+      },
+      "to": {
+        "track_id": 5,
+        "hand": "left"
+      }
+    },
+    {
+      "kind": "shot",
+      "start_frame": 209,
+      "end_frame": 300,
+      "from": {
+        "track_id": 5,
+        "hand": "right"
+      },
+      "to": {
+        "hoop": "right"
+      }
+    }
+  ]
+}

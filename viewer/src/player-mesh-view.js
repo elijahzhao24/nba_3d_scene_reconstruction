@@ -76,10 +76,10 @@ export class PlayerMeshView {
     return player;
   }
 
-  showPlayer(id, p, points, layout, handsOnly = false) {
+  showPlayer(id, p, points, layout, { handsOnly = false, lookAt } = {}) {
     if (!this.ready) return false;
     const player = this.players.get(id) ?? this.addPlayer(id);
-    if (!player || !placePlayerRig(player.rig, p, points, layout)) return false;
+    if (!player || !placePlayerRig(player.rig, p, points, layout, lookAt)) return false;
     let visible = false;
     for (const { mesh, body, hands } of player.meshes) {
       mesh.geometry = handsOnly && hands ? hands : body;

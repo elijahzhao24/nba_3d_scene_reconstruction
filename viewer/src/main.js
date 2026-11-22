@@ -1,24 +1,37 @@
 import { BallEditor } from './ball-editor.js';
 import { createBallHandResolver } from './ball-hand.js';
-import { sampleBall } from './ball-keyframes.js';
+import { readBallKeyframes, sampleBall } from './ball-keyframes.js';
 import { CourtView } from './court-view.js';
+import { demoClips } from './demo-clips.js';
+import { DemoPovViews } from './demo-pov-views.js';
 import { setupFullscreen } from './fullscreen.js';
 import { estimateTrackScales, getPoseLayout, makeCameraBasis, poseScaleKey } from './player-pose.js';
 import { playerPov } from './player-pov.js';
 import { frameAtTime, readScene } from './scene-data.js';
 import './style.css';
 
+const POV_PANELS = ['pov-first', 'pov-second'];
+
 const elements = Object.fromEntries([
-  'ball-editor', 'clip-name', 'court-size', 'duration', 'elapsed', 'frame', 'frame-index', 'fullscreen',
+  'ball-editor', 'clip-name', 'compare', 'court-heading', 'court-size', 'demo-clips',
+  'duration', 'elapsed', 'frame', 'frame-index', 'fullscreen',
   'load-message', 'markers', 'model-message', 'next', 'open', 'orbit', 'play', 'player-count',
   'players', 'previous',
+  ...POV_PANELS.flatMap((name) => [`${name}-panel`, `${name}-viewport`, `${name}-status`, `${name}-id`]),
   'pose-alignment', 'pose-alignment-status', 'pose-pitch', 'pose-yaw', 'pitch-value',
-  'pov', 'pov-controls', 'pov-status', 'pov-tilt', 'pov-tilt-value', 'pov-track',
-  'renderer-error', 'replay', 'reset-pose', 'scene-file', 'skeletons', 'top-down',
-  'view-hint', 'viewport', 'yaw-value',
+  'pov', 'pov-controls', 'pov-status', 'pov-track',
+  'renderer-error', 'replay', 'reset-pose', 'scene-file', 'skeletons', 'source-panel',
+  'source-video', 'top-down', 'video-status', 'view-grid', 'view-hint', 'viewport', 'yaw-value',
 ].map((id) => [id, document.getElementById(id)]));
 
 const PLAYER_DISPLAYS = ['players', 'skeletons', 'markers'];
+const COMPARISON_PANELS = ['source-panel', 'court-heading', ...POV_PANELS.map((name) => `${name}-panel`)];
+
+async function fetchDemoFile(url) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('A demo file could not load.');
+  return response.text();
+}
 
 function start(view) {
   const { frame, next, play, previous } = elements;
@@ -27,6 +40,10 @@ function start(view) {
   let index = 0;
   let clockOrigin = null;
   let loadVersion = 0;
+  let activeDemo = null;
+  let demoPovs;
+  let videoClock = false;
+  let videoPlayVersion = 0;
   let pose;
   let cameraMode = 'top';
   let povTrack = null;
@@ -34,9 +51,10 @@ function start(view) {
   let playerDisplayChosen = false;
   let ballKeyframes = [];
   let resolveBallHand = () => null;
+  const sourceVideo = elements['source-video'];
+  const videoStatus = elements['video-status'];
   const yaw = elements['pose-yaw'];
   const pitch = elements['pose-pitch'];
-  const povTilt = elements['pov-tilt'];
   const resolveHand = (anchor, time) => resolveBallHand(anchor, time);
   const resolveHoop = (hoop) => view.hoopPosition(hoop);
   const resolveRigHand = (...args) => view.ballHandPosition(...args);
@@ -54,22 +72,35 @@ function start(view) {
   });
 
   function setMode(mode) {
+    const comparing = mode === 'compare';
+    const layoutChanged = comparing !== (cameraMode === 'compare');
+    if (layoutChanged) pause();
     cameraMode = mode;
-    view.setMode(mode);
+    view.setMode(comparing ? 'orbit' : mode);
+    elements.compare.setAttribute('aria-pressed', String(comparing));
     elements.orbit.setAttribute('aria-pressed', String(mode === 'orbit'));
     elements['top-down'].setAttribute('aria-pressed', String(mode === 'top'));
     elements.pov.setAttribute('aria-pressed', String(mode === 'pov'));
-    elements['view-hint'].hidden = mode !== 'orbit';
+    elements['view-hint'].hidden = mode !== 'orbit' && !comparing;
     elements['pov-controls'].hidden = mode !== 'pov';
-    if (scene) drawPlayers();
+    elements['view-grid'].classList.toggle('is-comparing', comparing);
+    for (const name of COMPARISON_PANELS) elements[name].hidden = !comparing;
+    if (layoutChanged) {
+      view.resize();
+      if (comparing) view.frameOrbitCourt();
+    }
+    if (scene) {
+      drawPlayers();
+      drawBall();
+      seekVideo();
+    }
   }
 
   function drawPlayers() {
     const current = scene.frames[index];
     const inPovMode = cameraMode === 'pov';
     const pov = inPovMode ? playerPov(current, povTrack, pose) : null;
-    view.setPlayerPov(pov, povTilt.valueAsNumber);
-    povTilt.disabled = !pov;
+    view.setPlayerPov(pov);
     const status = elements['pov-status'];
     const unavailable = inPovMode && !pov;
     status.hidden = !unavailable;
@@ -78,6 +109,7 @@ function start(view) {
       if (status.textContent !== message) status.textContent = message;
     }
     view.showPlayers(current.players, pose, playerDisplay, pov ? povTrack : null);
+    if (cameraMode === 'compare') demoPovs.setFrame(current, pose, playerDisplay);
     elements['player-count'].textContent = current.players.length - Number(Boolean(pov));
   }
 
@@ -86,7 +118,7 @@ function start(view) {
     for (const name of PLAYER_DISPLAYS) {
       elements[name].setAttribute('aria-pressed', String(name === mode));
     }
-    elements['pose-alignment'].hidden = mode === 'markers';
+    elements['pose-alignment'].hidden = Boolean(activeDemo) || mode === 'markers';
   }
 
   function drawBall(time = scene?.frames[index].t) {
@@ -94,6 +126,7 @@ function start(view) {
       ? sampleBall(ballKeyframes, scene, time, resolveHand, resolveHoop)
       : null;
     view.showBall(position);
+    if (cameraMode === 'compare') demoPovs.showBall(position);
   }
 
   function refreshBallHands() {
@@ -109,6 +142,7 @@ function start(view) {
     drawPlayers();
     ballEditor.setFrame(current);
     drawBall(playbackTime);
+    if (clockOrigin === null) seekVideo();
     frame.value = String(index);
     frame.style.setProperty('--progress', lastIndex ? `${(index / lastIndex) * 100}%` : '0%');
     frame.setAttribute('aria-valuetext', `Frame ${current.frame_idx}`);
@@ -121,9 +155,45 @@ function start(view) {
   function pause() {
     const wasPlaying = clockOrigin !== null;
     clockOrigin = null;
+    videoClock = false;
+    videoPlayVersion += 1;
+    sourceVideo.pause();
     play.textContent = 'Play';
     play.dataset.playing = 'false';
-    if (wasPlaying) drawBall();
+    if (wasPlaying) {
+      seekVideo();
+      drawBall();
+    }
+  }
+
+  function seekVideo() {
+    if (cameraMode !== 'compare' || !activeDemo?.videoUrl || sourceVideo.error) return;
+    const time = scene.frames[index].t;
+    if (Math.abs(sourceVideo.currentTime - time) > 0.001) sourceVideo.currentTime = time;
+  }
+
+  function playVideo() {
+    if (cameraMode !== 'compare' || !activeDemo?.videoUrl || sourceVideo.error) return;
+    seekVideo();
+    const version = ++videoPlayVersion;
+    videoClock = true;
+    sourceVideo.play().catch(() => {
+      if (version !== videoPlayVersion) return;
+      videoClock = false;
+      clockOrigin = performance.now() - scene.frames[index].t * 1000;
+      videoStatus.textContent = 'Original video could not play.';
+      videoStatus.hidden = false;
+    });
+  }
+
+  function timeAtPlayback(now) {
+    if (!videoClock) return (now - clockOrigin) / 1000;
+    const time = sourceVideo.currentTime;
+    if (sourceVideo.error || sourceVideo.ended) {
+      videoClock = false;
+      clockOrigin = now - time * 1000;
+    }
+    return time;
   }
 
   function scrubTo(newIndex) {
@@ -140,6 +210,7 @@ function start(view) {
     clockOrigin = performance.now() - scene.frames[index].t * 1000;
     play.textContent = 'Pause';
     play.dataset.playing = 'true';
+    playVideo();
   }
 
   function updateAlignment() {
@@ -177,6 +248,7 @@ function start(view) {
     const defaultPoseDisplay = view.playerModelReady ? 'players' : 'skeletons';
     setPlayerDisplay(pose ? defaultPoseDisplay : 'markers');
     playerDisplayChosen = false;
+    return maxPlayers;
   }
 
   function loadPlayerModel(data) {
@@ -214,19 +286,46 @@ function start(view) {
     if (!ids.length && cameraMode === 'pov') setMode('orbit');
   }
 
-  function loadScene(data) {
+  function loadScene(data, demo, initialKeyframes) {
     pause();
+    const firstScene = !scene;
+    const isDemo = Boolean(demo);
+    activeDemo = demo;
+    if (isDemo) elements.replay.dataset.mode = 'demo';
+    else delete elements.replay.dataset.mode;
+    document.documentElement.classList.toggle('demo-active', isDemo);
+    elements['ball-editor'].hidden = isDemo;
     view.setCourt(data.court);
     view.clearMarkers();
-    loadPoses(data);
-    if (pose && !scene) setMode('orbit');
+    const maxPlayers = loadPoses(data);
     scene = data;
     index = 0;
-    loadPovTracks();
     ballKeyframes = [];
     resolveBallHand = createBallHandResolver(scene, pose, resolveRigHand);
-    ballEditor.setScene(scene);
-    elements['clip-name'].textContent = `${data.clip_id} / ${data.segment_id}`;
+    loadPovTracks();
+    if (demo) {
+      demoPovs ??= new DemoPovViews(POV_PANELS.map((name) => ({
+        viewport: elements[`${name}-viewport`], status: elements[`${name}-status`],
+      })));
+      for (const [i, name] of POV_PANELS.entries()) elements[`${name}-id`].textContent = demo.povTracks[i];
+      demoPovs.setScene(data.court, pose?.layout, maxPlayers, demo.povTracks);
+      if (pose) demoPovs.loadPlayerModel().then(() => {
+        if (scene === data && cameraMode === 'compare') drawPlayers();
+      });
+    }
+    videoStatus.hidden = Boolean(demo?.videoUrl);
+    videoStatus.textContent = 'Original video unavailable.';
+    if (demo?.videoUrl) sourceVideo.src = demo.videoUrl;
+    else if (sourceVideo.hasAttribute('src')) {
+      sourceVideo.removeAttribute('src');
+      sourceVideo.load();
+    }
+    elements.compare.hidden = !demo;
+    for (const [id, button] of demoButtons) button.setAttribute('aria-pressed', String(id === demo?.id));
+    if (demo) setMode('compare');
+    else if (cameraMode === 'compare' || (firstScene && pose)) setMode('orbit');
+    ballEditor.setScene(scene, { demoId: demo?.id, initialKeyframes });
+    elements['clip-name'].textContent = demo?.title ?? `${data.clip_id} / ${data.segment_id}`;
     elements['court-size'].textContent = `${data.court.length_m} × ${data.court.width_m} m`;
     frame.max = String(data.frames.length - 1);
     frame.disabled = false;
@@ -239,18 +338,31 @@ function start(view) {
 
   const input = elements['scene-file'];
   const message = elements['load-message'];
-  elements.open.addEventListener('click', () => input.click());
-  input.addEventListener('change', async () => {
-    const [file] = input.files;
-    input.value = '';
-    if (!file) return;
+  const demoButtons = new Map(demoClips.map((demo) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `${demo.title} `;
+    const description = document.createElement('span');
+    description.className = 'demo-description';
+    description.textContent = `(${demo.description})`;
+    button.append(description);
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', () => loadDemo(demo));
+    return [demo.id, button];
+  }));
+  elements['demo-clips'].append(...demoButtons.values());
+
+  async function loadClip(readFiles, demo = null) {
+    pause();
     const version = ++loadVersion;
     message.dataset.state = 'loading';
-    message.textContent = 'Reading scene…';
+    message.textContent = demo ? `Loading ${demo.title}…` : 'Reading scene…';
     try {
-      const data = readScene(await file.text());
+      const [sceneText, ballText] = await readFiles();
       if (version !== loadVersion) return;
-      loadScene(data);
+      const data = readScene(sceneText);
+      const keyframes = ballText ? readBallKeyframes(ballText, data) : [];
+      loadScene(data, demo, keyframes);
       message.dataset.state = 'loaded';
       message.textContent = `${data.frames.length.toLocaleString()} frames · ${data.fps.toFixed(2)} fps`;
     } catch (error) {
@@ -258,19 +370,35 @@ function start(view) {
       message.dataset.state = 'error';
       message.textContent = error.message;
     }
+  }
+
+  function loadDemo(demo) {
+    return loadClip(() => Promise.all([
+      fetchDemoFile(demo.sceneUrl),
+      demo.ballUrl ? fetchDemoFile(demo.ballUrl) : null,
+    ]), demo);
+  }
+
+  sourceVideo.addEventListener('error', () => {
+    if (activeDemo?.videoUrl && sourceVideo.error) {
+      videoStatus.textContent = 'Original video could not load.';
+      videoStatus.hidden = false;
+    }
   });
+  elements.open.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    const [file] = input.files;
+    input.value = '';
+    if (file) loadClip(async () => [await file.text()]);
+  });
+
+  elements.compare.addEventListener('click', () => setMode('compare'));
 
   elements['top-down'].addEventListener('click', () => setMode('top'));
   elements.orbit.addEventListener('click', () => setMode('orbit'));
   elements.pov.addEventListener('click', () => setMode('pov'));
   elements['pov-track'].addEventListener('change', ({ target }) => {
     povTrack = Number(target.value);
-    drawPlayers();
-  });
-  povTilt.addEventListener('input', () => {
-    const angle = povTilt.valueAsNumber;
-    povTilt.setAttribute('aria-valuetext', `${angle} degrees down`);
-    elements['pov-tilt-value'].textContent = `${angle}°`;
     drawPlayers();
   });
   for (const mode of PLAYER_DISPLAYS) {
@@ -299,16 +427,18 @@ function start(view) {
 
   function tick(now) {
     if (clockOrigin !== null) {
-      const time = Math.min(scene.frames.at(-1).t, (now - clockOrigin) / 1000);
+      const time = Math.min(scene.frames.at(-1).t, timeAtPlayback(now));
       const current = frameAtTime(scene.frames, time);
       if (current !== index) setFrame(current, time);
       else drawBall(time);
       if (current === scene.frames.length - 1) pause();
     }
     view.render();
+    if (cameraMode === 'compare') demoPovs.render();
     requestAnimationFrame(tick);
   }
   requestAnimationFrame(tick);
+  if (demoClips.length) loadDemo(demoClips[0]);
 }
 
 let view;

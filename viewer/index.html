@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#090909" />
+    <meta name="theme-color" content="#0a0b0c" />
     <title>Court Replay</title>
     <link rel="icon" href="data:," />
   </head>
@@ -14,6 +14,9 @@
           <span class="court-mark" aria-hidden="true"></span>
           <h1>Court Replay</h1>
         </div>
+        <nav class="demo-bar" aria-label="Demo clips">
+          <div id="demo-clips" class="demo-clips"></div>
+        </nav>
         <div class="source">
           <span id="clip-name" class="clip-name">No scene loaded</span>
           <button type="button" class="open-button" id="open">Open scene</button>
@@ -26,33 +29,55 @@
       <section id="replay" class="replay" aria-label="Court replay">
         <header class="replay-header">
           <div class="views" aria-label="Camera views" role="group">
+            <button type="button" id="compare" aria-pressed="false" hidden>Compare</button>
             <button type="button" id="top-down" aria-pressed="true">Top down</button>
             <button type="button" id="orbit" aria-pressed="false">Orbit</button>
             <button type="button" id="pov" aria-pressed="false" disabled>Player POV</button>
           </div>
-          <div class="player-views" aria-label="Player display" role="group">
-            <button type="button" id="players" aria-pressed="false" disabled>Players</button>
-            <button type="button" id="skeletons" aria-pressed="false" disabled>Skeletons</button>
-            <button type="button" id="markers" aria-pressed="true" disabled>Markers</button>
+          <div class="view-options">
+            <div class="player-views" aria-label="Player display" role="group">
+              <button type="button" id="players" aria-pressed="false" disabled>Players</button>
+              <button type="button" id="skeletons" aria-pressed="false" disabled>Skeletons</button>
+              <button type="button" id="markers" aria-pressed="true" disabled>Markers</button>
+            </div>
+            <div class="player-count"><span id="player-count">—</span><span class="count-visible"> visible</span> players</div>
+            <button type="button" id="fullscreen" class="fullscreen-button" aria-controls="replay" disabled>Fullscreen</button>
           </div>
-          <div class="player-count"><span id="player-count">—</span><span class="count-visible"> visible</span> players</div>
-          <button type="button" id="fullscreen" class="fullscreen-button" aria-controls="replay" disabled>Fullscreen</button>
         </header>
         <div id="pov-controls" class="pov-controls" hidden>
           <label for="pov-track">Follow player</label>
           <select id="pov-track"></select>
-          <div class="pov-tilt">
-            <label for="pov-tilt">Look down</label>
-            <input id="pov-tilt" type="range" min="0" max="80" value="35" aria-valuetext="35 degrees down" />
-            <output id="pov-tilt-value" for="pov-tilt">35°</output>
-          </div>
           <span id="pov-status" role="status" hidden></span>
         </div>
         <p id="model-message" class="model-message" role="status" hidden></p>
-        <div id="viewport" class="viewport" aria-label="3D basketball court">
-          <p id="renderer-error" class="renderer-error" hidden></p>
-          <span id="view-hint" class="view-hint" aria-hidden="true" hidden>Drag to rotate · Scroll to zoom</span>
-          <span class="court-size" id="court-size">28.65 × 15.24 m</span>
+        <div id="view-grid" class="view-grid">
+          <section id="source-panel" class="view-panel" aria-labelledby="source-heading" hidden>
+            <h2 id="source-heading" class="view-title">Original video</h2>
+            <div class="view-media source-media">
+              <video id="source-video" muted playsinline preload="auto" aria-labelledby="source-heading"></video>
+              <p id="video-status" class="view-status" role="status" hidden></p>
+            </div>
+          </section>
+          <section class="view-panel" aria-label="3D court">
+            <h2 id="court-heading" class="view-title" hidden>3D court</h2>
+            <div id="viewport" class="viewport view-media" aria-label="3D basketball court">
+              <p id="renderer-error" class="renderer-error" hidden></p>
+              <span id="view-hint" class="view-hint" aria-hidden="true" hidden>Drag to rotate · Scroll to zoom</span>
+              <span class="court-size" id="court-size">28.65 × 15.24 m</span>
+            </div>
+          </section>
+          <section id="pov-first-panel" class="view-panel" aria-labelledby="pov-first-heading" hidden>
+            <h2 id="pov-first-heading" class="view-title">Player <span id="pov-first-id"></span> POV</h2>
+            <div id="pov-first-viewport" class="viewport view-media">
+              <p id="pov-first-status" class="view-status" role="status" hidden></p>
+            </div>
+          </section>
+          <section id="pov-second-panel" class="view-panel" aria-labelledby="pov-second-heading" hidden>
+            <h2 id="pov-second-heading" class="view-title">Player <span id="pov-second-id"></span> POV</h2>
+            <div id="pov-second-viewport" class="viewport view-media">
+              <p id="pov-second-status" class="view-status" role="status" hidden></p>
+            </div>
+          </section>
         </div>
         <div class="transport" aria-label="Playback controls">
           <div class="playback-buttons">
