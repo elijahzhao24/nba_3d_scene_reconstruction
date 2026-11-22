@@ -1,6 +1,12 @@
 # nba_3d_scene_reconstruction
 
-#### Demos:
+## Summary
+
+The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.
+
+This can be done by using multiple models to solve sub problems, such as player detection, team clustering, court keypoint detection, ect. When combined together, enough information can be gathered to recreate the scene
+
+## Demos:
 
 **Requirements + HLD design + low Level design (below in the README)**:
 ![High Level Diagram](high_level_diagram.png)
@@ -42,12 +48,6 @@ npm --prefix viewer run dev
 
 The first run builds the Docker image. Omit `--max-frames` for the full clip.
 Open the URL printed by Vite and use **Open scene** to load `artifacts/test_video_2/scene.json`.
-
-## Summary
-
-The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.
-
-This can be done by using multiple models to solve sub problems, such as player detection, team clustering, court keypoint detection, ect. When combined together, enough information can be gathered to recreate the scene
 
 ## Requirements/Goals
 
