@@ -440,7 +440,8 @@ their pelvis-relative camera axes and model units.
 
 When poses are available, **Players** animates a bundled, generic skinned player
 model. The viewer maps joint directions to the model's bones and preserves its
-proportions. Each track has its own rig, and all tracks use the same uniform.
+proportions. Each track has its own rig and uses the same steel-gray player model
+with a yellow uniform.
 Use **Skeletons** to inspect the 17-joint poses or **Markers** to compare
 court positions. Missing or implausibly scaled poses keep their floor markers.
 The viewer normalizes pose scale once per lifting sequence and grounds the
@@ -459,8 +460,10 @@ scene exports still open and can be aligned manually.
 
 With a scene containing player poses open, choose **Player POV**, pick a track
 under **Follow player**, and scrub or play. The camera uses the estimated head
-position and body facing direction. It switches to Orbit for frames where that
-track has no usable pose and resumes POV when the pose returns.
+position and body facing direction with a 95° field of view. The selected
+player's animated hands and forearms are visible in this view. Use **Look down**
+to bring lowered hands into frame. The camera switches to Orbit when the
+selected track has no usable pose and resumes POV when the pose returns.
 
 Choose **Fullscreen** above the court for a larger playback view. The camera
 controls and timeline are still available. Use **Exit fullscreen** or press

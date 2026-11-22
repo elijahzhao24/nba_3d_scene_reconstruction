@@ -7,9 +7,9 @@ export class SkeletonView {
   constructor(scene) {
     this.scene = scene;
     this.boneGeometry = new THREE.CylinderGeometry(0.043, 0.043, 1, 8);
-    this.boneMaterial = new THREE.MeshBasicMaterial({ color: 0x54f0cd });
+    this.boneMaterial = new THREE.MeshBasicMaterial({ color: 0xe7c957 });
     this.jointGeometry = new THREE.SphereGeometry(1, 10, 8);
-    this.jointMaterial = new THREE.MeshBasicMaterial({ color: 0xecfff7 });
+    this.jointMaterial = new THREE.MeshBasicMaterial({ color: 0xfff0bd });
     this.transform = new THREE.Object3D();
     this.parent = new THREE.Vector3();
     this.child = new THREE.Vector3();

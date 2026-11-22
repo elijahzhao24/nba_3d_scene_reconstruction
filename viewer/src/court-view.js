@@ -22,16 +22,18 @@ export class CourtView {
     this.skeletons = new SkeletonView(this.scene);
     this.playerMeshes = new PlayerMeshView(this.scene);
     this.ball = new BallView(this.scene);
-    this.scene.background = new THREE.Color(0x18272a);
-    const key = new THREE.DirectionalLight(0xffebdb, 2.1);
+    this.scene.background = new THREE.Color(0x000000);
+    const key = new THREE.DirectionalLight(0xfff9ee, 2.1);
     key.position.set(-4, 9, 5);
-    this.scene.add(new THREE.HemisphereLight(0xfff7ed, 0x66878a, 1.65), key);
+    const fill = new THREE.DirectionalLight(0xe4ebf5, 0.45);
+    fill.position.set(5, 4, -6);
+    this.scene.add(new THREE.HemisphereLight(0xf2f1ea, 0x77746e, 1.48), key, fill);
     this.topCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 300);
     this.topCamera.position.set(0, 45, 0);
     this.topCamera.up.set(0, 0, -1);
     this.topCamera.lookAt(0, 0, 0);
     this.orbitCamera = new THREE.PerspectiveCamera(40, 1, 0.1, 300);
-    this.povCamera = new THREE.PerspectiveCamera(90, 1, 0.06, 150);
+    this.povCamera = new THREE.PerspectiveCamera(95, 1, 0.06, 150);
     this.povTarget = new THREE.Vector3();
     this.povReady = false;
     this.controls = new OrbitControls(this.orbitCamera, this.renderer.domElement);
@@ -43,13 +45,17 @@ export class CourtView {
 
     this.markers = new Map();
     this.discGeometry = new THREE.CylinderGeometry(0.22, 0.22, 0.055, 24);
-    this.discMaterial = new THREE.MeshBasicMaterial({ color: 0x3bf1d4 });
+    this.discMaterial = new THREE.MeshBasicMaterial({ color: 0xe8cf62 });
     this.borderGeometry = new THREE.CylinderGeometry(0.27, 0.27, 0.045, 24);
-    this.borderMaterial = new THREE.MeshBasicMaterial({ color: 0x183630 });
+    this.borderMaterial = new THREE.MeshBasicMaterial({ color: 0x594d29 });
     this.shadowGeometry = new THREE.CircleGeometry(0.36, 24);
     this.shadowMaterial = new THREE.MeshBasicMaterial({
-      color: 0x0b2428, opacity: 0.42, transparent: true, depthWrite: false,
+      color: 0x000000, opacity: 0.36, transparent: true, depthWrite: false,
     });
+    this.enableReflection = this.renderer.extensions.has('EXT_color_buffer_float')
+      || this.renderer.extensions.has('EXT_color_buffer_half_float');
+    this.hasPlayers = false;
+    this.hasBall = false;
     this.setCourt(DEFAULT_COURT);
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -76,7 +82,7 @@ export class CourtView {
   }
 
   setCourt(dimensions) {
-    const court = makeCourt(dimensions);
+    const court = makeCourt(dimensions, this.enableReflection);
     if (this.court) disposeCourt(this.court);
     this.dimensions = dimensions;
     this.court = court;
@@ -88,7 +94,7 @@ export class CourtView {
   frameOrbitCourt() {
     const { length_m: length, width_m: width } = this.dimensions;
     const camera = this.orbitCamera;
-    const direction = new THREE.Vector3(0.27, 0.55, 0.78).normalize();
+    const direction = new THREE.Vector3(0.29, 0.46, 0.84).normalize();
     camera.position.copy(direction);
     this.controls.target.set(0, 0, 0);
     camera.lookAt(this.controls.target);
@@ -115,11 +121,14 @@ export class CourtView {
     this.updateActiveCamera();
   }
 
-  setPlayerPov(pov) {
+  setPlayerPov(pov, tilt = 0) {
     this.povReady = Boolean(pov);
     if (pov) {
       this.povCamera.position.fromArray(pov.eye);
-      this.povTarget.fromArray(pov.direction).add(this.povCamera.position);
+      const angle = THREE.MathUtils.degToRad(tilt);
+      this.povTarget.fromArray(pov.direction).multiplyScalar(Math.cos(angle));
+      this.povTarget.y = -Math.sin(angle);
+      this.povTarget.add(this.povCamera.position);
       this.povCamera.lookAt(this.povTarget);
     }
     if (this.mode === 'pov') this.updateActiveCamera();
@@ -164,6 +173,7 @@ export class CourtView {
     }
     this.markers.clear();
     this.playerMeshes.clear();
+    this.hasPlayers = false;
   }
 
   configurePoses(layout, maxPlayers) {
@@ -187,21 +197,27 @@ export class CourtView {
   }
 
   showBall(position) {
+    this.hasBall = Boolean(position);
     this.ball.show(position);
   }
 
-  showPlayers(players, pose, display, hiddenTrack = null) {
+  showPlayers(players, pose, display, povTrack = null) {
+    this.hasPlayers = players.length > 0;
     const poses = [];
     this.playerMeshes.hidePlayers();
     for (const { group } of this.markers.values()) group.visible = false;
     for (const player of players) {
       const { id, p, joints } = player;
-      if (id === hiddenTrack) continue;
+      const handsOnly = id === povTrack;
+      const points = (handsOnly || display !== 'markers') && pose
+        && groundPose(joints, pose.layout, pose.scales.get(poseScaleKey(player)), pose.basis);
+      if (handsOnly) {
+        if (points) this.playerMeshes.showPlayer(id, p, points, pose.layout, true);
+        continue;
+      }
       const { group, label, disc, border, shadow } = this.markers.get(id) ?? this.addMarker(id);
       group.position.fromArray(p);
       group.visible = true;
-      const points = display !== 'markers' && pose
-        && groundPose(joints, pose.layout, pose.scales.get(poseScaleKey(player)), pose.basis);
       const hasMesh = points && display === 'players' && this.playerMeshes.showPlayer(id, p, points, pose.layout);
       if (points && !hasMesh) poses.push({ p, points });
       disc.visible = border.visible = !hasMesh;
@@ -213,6 +229,11 @@ export class CourtView {
 
   render() {
     if (this.controls.enabled) this.controls.update();
+    const { floor, reflector } = this.court.userData;
+    if (reflector) {
+      reflector.visible = !this.camera.isOrthographicCamera && (this.hasPlayers || this.hasBall);
+      floor.visible = !reflector.visible;
+    }
     this.renderer.render(this.scene, this.camera);
     this.labels.render(this.scene, this.camera);
   }

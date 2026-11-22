@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { Bone, Group, Quaternion, Vector3 } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { bindPlayerRig, placePlayerRig } from '../src/player-rig.js';
 
 const restPositions = {
@@ -147,11 +148,15 @@ test('declines incompatible rigs and unusable source poses', () => {
 test('the retargeted mesh grounds an actual shoe after the legs bend', async () => {
   const file = await readFile(new URL('../assets/player.glb', import.meta.url));
   const glb = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
-  const { scene } = await new GLTFLoader().parseAsync(glb, '');
+  const { scene: template } = await new GLTFLoader().parseAsync(glb, '');
+  const scene = clone(template);
   const rig = bindPlayerRig(scene);
   assert.ok(rig);
-  const mesh = scene.getObjectByProperty('isSkinnedMesh', true);
-  assert.ok(mesh);
+  const meshes = scene.getObjectsByProperty('isSkinnedMesh', true);
+  assert.ok(meshes.length > 0);
+  for (const { skeleton } of meshes) {
+    for (const bone of skeleton.bones) assert.equal(bone, rig.bones[bone.name]);
+  }
 
   const points = names.map((name) => position(rig.bones[name]).toArray());
   points[layout.index.left_knee] = [0.3, 0.7, 0.52];
@@ -163,9 +168,11 @@ test('the retargeted mesh grounds an actual shoe after the legs bend', async () 
   scene.updateMatrixWorld(true);
   const vertex = new Vector3();
   let floor = Infinity;
-  for (let i = 0; i < mesh.geometry.attributes.position.count; i += 1) {
-    mesh.getVertexPosition(i, vertex);
-    floor = Math.min(floor, mesh.localToWorld(vertex).y);
+  for (const mesh of meshes) {
+    for (const index of new Set(mesh.geometry.getIndex().array)) {
+      mesh.getVertexPosition(index, vertex);
+      floor = Math.min(floor, mesh.localToWorld(vertex).y);
+    }
   }
   assertNear(floor, 0, 1e-6);
 });

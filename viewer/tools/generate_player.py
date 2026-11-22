@@ -15,15 +15,19 @@ Point = tuple[float, float, float]
 Color = tuple[int, int, int, int]
 Weight = tuple[str, str, float]
 
-TEAL = "#24c7a8"
-TEAL_DARK = "#176657"
-TRIM = "#c2f0d6"
-SHORTS = "#25343e"
-SKIN = "#a76d51"
-HAIR = "#272627"
-SOCK = "#d9e6df"
-SOLE = "#c6d8ce"
-SHOE = "#23303a"
+JERSEY = "#efd24f"
+UNIFORM_ACCENT = "#9d7827"
+TRIM = "#fff0b8"
+SHORTS = "#d8ae39"
+SKIN = "#bcc1c7"
+FACE = "#b0b0b0"
+HAIR = "#646464"
+EYES = "#515151"
+SOCK = "#e9e7df"
+SOLE = "#c4c1b5"
+SHOE = "#d5d1c7"
+SATIN_STEEL = 0
+MATTE_SURFACES = 1
 
 
 def sub(a: Point, b: Point) -> Point:
@@ -76,7 +80,7 @@ class PlayerMesh:
         self.colors: list[Color] = []
         self.joint_indices: list[tuple[int, ...]] = []
         self.joint_weights: list[tuple[int, ...]] = []
-        self.indices: list[int] = []
+        self.indices: tuple[list[int], list[int]] = ([], [])
 
     def vertex(self, position: Point, color: str, binding: str | Weight) -> int:
         index = len(self.positions)
@@ -104,12 +108,14 @@ class PlayerMesh:
         *,
         follow_axis: bool = False,
         side_color: Callable[[int, int], str | None] | None = None,
+        material: int = MATTE_SURFACES,
     ) -> None:
         """Join elliptical cross-sections and cap both ends."""
         axis = unit(sub(rings[-1].center, rings[0].center)) if follow_axis else (0, 1, 0)
         right = unit(cross(axis, (0, 0, 1)))
         forward = cross(right, axis)
         start = len(self.positions)
+        indices = self.indices[material]
         for row, ring in enumerate(rings):
             for side in range(sides):
                 angle = 2 * math.pi * side / sides
@@ -124,23 +130,24 @@ class PlayerMesh:
                 base = start + row * sides
                 a = base + side
                 b = base + (side + 1) % sides
-                self.indices.extend((a, a + sides, b + sides, a, b + sides, b))
+                indices.extend((a, a + sides, b + sides, a, b + sides, b))
 
         bottom = self.vertex(rings[0].center, rings[0].color, rings[0].bone)
         top = self.vertex(rings[-1].center, rings[-1].color, rings[-1].bone)
         last_ring = start + (len(rings) - 1) * sides
         for side in range(sides):
             next_side = (side + 1) % sides
-            self.indices.extend((bottom, start + side, start + next_side))
-            self.indices.extend((top, last_ring + next_side, last_ring + side))
+            indices.extend((bottom, start + side, start + next_side))
+            indices.extend((top, last_ring + next_side, last_ring + side))
 
     def normals(self) -> list[Point]:
         totals = [[0.0, 0.0, 0.0] for _ in self.positions]
-        for a, b, c in zip(self.indices[::3], self.indices[1::3], self.indices[2::3]):
-            normal = cross(sub(self.positions[b], self.positions[a]), sub(self.positions[c], self.positions[a]))
-            for vertex in (a, b, c):
-                for axis, value in enumerate(normal):
-                    totals[vertex][axis] += value
+        for indices in self.indices:
+            for a, b, c in zip(indices[::3], indices[1::3], indices[2::3]):
+                normal = cross(sub(self.positions[b], self.positions[a]), sub(self.positions[c], self.positions[a]))
+                for vertex in (a, b, c):
+                    for axis, value in enumerate(normal):
+                        totals[vertex][axis] += value
         return [unit(tuple(normal)) for normal in totals]
 
 
@@ -172,31 +179,31 @@ def add_torso(mesh: PlayerMesh) -> None:
         (0.881, 0.065, 0.062, SHORTS, "pelvis"),
         (0.935, 0.162, 0.105, SHORTS, "pelvis"),
         (0.980, 0.194, 0.127, SHORTS, "pelvis"),
-        (1.048, 0.179, 0.115, TEAL_DARK, "pelvis"),
+        (1.048, 0.179, 0.115, UNIFORM_ACCENT, "pelvis"),
         (1.072, 0.174, 0.110, TRIM, "pelvis"),
         (1.085, 0.170, 0.105, SHORTS, "pelvis"),
     ]), 12)
     mesh.loft(vertical(0, 0.010, [
-        (1.066, 0.173, 0.108, TEAL_DARK, "pelvis"),
-        (1.116, 0.163, 0.098, TEAL, ("pelvis", "spine", 0.76)),
-        (1.251, 0.174, 0.103, TEAL, "spine"),
-        (1.400, 0.203, 0.119, TEAL, ("spine", "neck", 0.69)),
-        (1.506, 0.209, 0.109, TEAL, ("spine", "neck", 0.39)),
-        (1.564, 0.152, 0.087, TEAL, "neck"),
+        (1.066, 0.173, 0.108, UNIFORM_ACCENT, "pelvis"),
+        (1.116, 0.163, 0.098, JERSEY, ("pelvis", "spine", 0.76)),
+        (1.251, 0.174, 0.103, JERSEY, "spine"),
+        (1.400, 0.203, 0.119, JERSEY, ("spine", "neck", 0.69)),
+        (1.506, 0.209, 0.109, JERSEY, ("spine", "neck", 0.39)),
+        (1.564, 0.152, 0.087, JERSEY, "neck"),
         (1.582, 0.085, 0.079, TRIM, "neck"),
-    ]), 12, side_color=lambda row, side: TEAL_DARK if row < 5 and side in (0, 6) else None)
+    ]), 12, side_color=lambda row, side: UNIFORM_ACCENT if row < 5 and side in (0, 6) else None)
     mesh.loft(vertical(0, 0.001, [
-        (1.546, 0.067, 0.064, SKIN, "neck"),
-        (1.633, 0.065, 0.062, SKIN, ("neck", "head", 0.80)),
-        (1.713, 0.064, 0.065, SKIN, "head"),
+        (1.546, 0.067, 0.064, FACE, "neck"),
+        (1.633, 0.065, 0.062, FACE, ("neck", "head", 0.80)),
+        (1.713, 0.064, 0.065, FACE, "head"),
     ]))
     mesh.loft([
-        Ring((0, 1.644, 0.024), 0.049, 0.050, SKIN, "head"),
-        Ring((0, 1.680, 0.020), 0.067, 0.071, SKIN, "head"),
-        Ring((0, 1.754, 0.018), 0.084, 0.089, SKIN, "head"),
-        Ring((0, 1.826, 0.014), 0.090, 0.091, SKIN, "head"),
-        Ring((0, 1.868, 0.007), 0.080, 0.086, SKIN, "head"),
-        Ring((0, 1.896, 0.003), 0.061, 0.066, SKIN, "head"),
+        Ring((0, 1.644, 0.024), 0.049, 0.050, FACE, "head"),
+        Ring((0, 1.680, 0.020), 0.067, 0.071, FACE, "head"),
+        Ring((0, 1.754, 0.018), 0.084, 0.089, FACE, "head"),
+        Ring((0, 1.826, 0.014), 0.090, 0.091, FACE, "head"),
+        Ring((0, 1.868, 0.007), 0.080, 0.086, FACE, "head"),
+        Ring((0, 1.896, 0.003), 0.061, 0.066, FACE, "head"),
     ], 12)
     mesh.loft(vertical(0, -0.005, [
         (1.806, 0.087, 0.078, HAIR, "head"),
@@ -206,20 +213,20 @@ def add_torso(mesh: PlayerMesh) -> None:
         (1.947, 0.027, 0.032, HAIR, "head"),
     ]), 12)
     mesh.loft(vertical(0, 0.101, [
-        (1.721, 0.013, 0.012, SKIN, "head"),
-        (1.736, 0.025, 0.028, SKIN, "head"),
-        (1.774, 0.014, 0.014, SKIN, "head"),
+        (1.721, 0.013, 0.012, FACE, "head"),
+        (1.736, 0.025, 0.028, FACE, "head"),
+        (1.774, 0.014, 0.014, FACE, "head"),
     ]), 6)
     for sign in (-1, 1):
         mesh.loft(vertical(sign * 0.086, 0.007, [
-            (1.725, 0.008, 0.010, SKIN, "head"),
-            (1.755, 0.018, 0.023, SKIN, "head"),
-            (1.785, 0.011, 0.016, SKIN, "head"),
+            (1.725, 0.008, 0.010, FACE, "head"),
+            (1.755, 0.018, 0.023, FACE, "head"),
+            (1.785, 0.011, 0.016, FACE, "head"),
         ]), 6)
         mesh.loft(vertical(sign * 0.033, 0.102, [
-            (1.779, 0.006, 0.003, "#493426", "head"),
-            (1.784, 0.010, 0.005, "#493426", "head"),
-            (1.789, 0.007, 0.003, "#493426", "head"),
+            (1.779, 0.006, 0.003, EYES, "head"),
+            (1.784, 0.010, 0.005, EYES, "head"),
+            (1.789, 0.007, 0.003, EYES, "head"),
         ]), 6)
 
 
@@ -235,10 +242,10 @@ def add_limb(mesh: PlayerMesh, joints: dict[str, Point], side: str) -> None:
         Ring(joints[knee], 0.067, 0.061, SKIN, (knee, hip, 0.49)),
         Ring(blend(joints[knee], joints[hip], 0.17), 0.077, 0.073, SKIN, hip),
         Ring(blend(joints[knee], joints[hip], 0.56), 0.095, 0.099, SKIN, hip),
-    ], follow_axis=True)
+    ], follow_axis=True, material=SATIN_STEEL)
     mesh.loft([
-        Ring(blend(joints[knee], joints[hip], 0.12), 0.086, 0.089, TEAL_DARK, (hip, knee, 0.92)),
-        Ring(blend(joints[knee], joints[hip], 0.15), 0.089, 0.093, TEAL, hip),
+        Ring(blend(joints[knee], joints[hip], 0.12), 0.086, 0.089, UNIFORM_ACCENT, (hip, knee, 0.92)),
+        Ring(blend(joints[knee], joints[hip], 0.15), 0.089, 0.093, JERSEY, hip),
         Ring(blend(joints[knee], joints[hip], 0.20), 0.094, 0.096, SHORTS, hip),
         Ring(blend(joints[knee], joints[hip], 0.61), 0.109, 0.115, SHORTS, hip),
         Ring(blend(joints[knee], joints[hip], 1.07), 0.108, 0.117, SHORTS, (hip, "pelvis", 0.55)),
@@ -247,7 +254,7 @@ def add_limb(mesh: PlayerMesh, joints: dict[str, Point], side: str) -> None:
     mesh.loft(vertical(x, 0.002, [
         (0.097, 0.046, 0.054, SOCK, ankle),
         (0.159, 0.052, 0.056, SOCK, (ankle, knee, 0.55)),
-        (0.174, 0.053, 0.057, TEAL_DARK, (ankle, knee, 0.42)),
+        (0.174, 0.053, 0.057, UNIFORM_ACCENT, (ankle, knee, 0.42)),
         (0.186, 0.054, 0.058, SOCK, (ankle, knee, 0.35)),
         (0.193, 0.053, 0.057, SOCK, (ankle, knee, 0.29)),
     ]))
@@ -258,7 +265,7 @@ def add_limb(mesh: PlayerMesh, joints: dict[str, Point], side: str) -> None:
         Ring((x, 0.050, 0.067), 0.061, 0.132, SHOE, ankle),
         Ring((x, 0.078, 0.046), 0.055, 0.111, SHOE, ankle),
         Ring((x, 0.118, 0.008), 0.046, 0.064, SHOE, ankle),
-        Ring((x, 0.130, 0.000), 0.044, 0.049, TEAL_DARK, ankle),
+        Ring((x, 0.130, 0.000), 0.044, 0.049, UNIFORM_ACCENT, ankle),
     ], 10)
 
     mesh.loft([
@@ -272,7 +279,7 @@ def add_limb(mesh: PlayerMesh, joints: dict[str, Point], side: str) -> None:
         Ring(blend(joints[elbow], joints[shoulder], 0.71), 0.071, 0.070, SKIN, shoulder),
         Ring(blend(joints[elbow], joints[shoulder], 1.11), 0.072, 0.065, SKIN, (shoulder, "neck", 0.66)),
         Ring(blend(joints[elbow], joints[shoulder], 1.23), 0.049, 0.048, SKIN, (shoulder, "neck", 0.58)),
-    ], 9, follow_axis=True)
+    ], 9, follow_axis=True, material=SATIN_STEEL)
 
 
 def make_glb(mesh: PlayerMesh, joints: dict[str, Point], parents: dict[str, str]) -> bytes:
@@ -307,7 +314,14 @@ def make_glb(mesh: PlayerMesh, joints: dict[str, Point], parents: dict[str, str]
         "JOINTS_0": accessor(mesh.joint_indices, 5121, "B", "VEC4", target=34962),
         "WEIGHTS_0": accessor(mesh.joint_weights, 5121, "B", "VEC4", target=34962, normalized=True),
     }
-    indices = accessor(((index,) for index in mesh.indices), 5123, "H", "SCALAR", target=34963)
+    primitives = [
+        {
+            "attributes": attributes,
+            "indices": accessor(((index,) for index in indices), 5123, "H", "SCALAR", target=34963),
+            "material": material,
+        }
+        for material, indices in enumerate(mesh.indices)
+    ]
     inverse_bind = accessor(
         ((1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -x, -y, -z, 1) for x, y, z in joints.values()),
         5126, "f", "MAT4",
@@ -331,9 +345,12 @@ def make_glb(mesh: PlayerMesh, joints: dict[str, Point], parents: dict[str, str]
         "scene": 0,
         "scenes": [{"nodes": [mesh.joints["pelvis"], mesh_node]}],
         "nodes": nodes,
-        "meshes": [{"primitives": [{"attributes": attributes, "indices": indices, "material": 0}]}],
+        "meshes": [{"primitives": primitives}],
         "skins": [{"joints": list(mesh.joints.values()), "skeleton": mesh.joints["pelvis"], "inverseBindMatrices": inverse_bind}],
-        "materials": [{"name": "Replay player", "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 0.88}}],
+        "materials": [
+            {"name": "Satin steel", "pbrMetallicRoughness": {"metallicFactor": 0.48, "roughnessFactor": 0.31}},
+            {"name": "Matte surfaces", "pbrMetallicRoughness": {"metallicFactor": 0, "roughnessFactor": 0.88}},
+        ],
         "buffers": [{"byteLength": len(binary)}],
         "bufferViews": views,
         "accessors": accessors,

@@ -3,20 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#10191b" />
+    <meta name="theme-color" content="#090909" />
     <title>Court Replay</title>
     <link rel="icon" href="data:," />
   </head>
   <body>
     <header class="masthead">
-      <div class="wordmark">
-        <span class="court-mark" aria-hidden="true"></span>
-        <h1>Court Replay</h1>
-      </div>
-      <div class="source">
-        <span id="clip-name" class="clip-name">No scene loaded</span>
-        <button type="button" class="open-button" id="open">Open scene</button>
-        <input type="file" id="scene-file" accept=".json,application/json" hidden />
+      <div class="masthead-inner">
+        <div class="wordmark">
+          <span class="court-mark" aria-hidden="true"></span>
+          <h1>Court Replay</h1>
+        </div>
+        <div class="source">
+          <span id="clip-name" class="clip-name">No scene loaded</span>
+          <button type="button" class="open-button" id="open">Open scene</button>
+          <input type="file" id="scene-file" accept=".json,application/json" hidden />
+        </div>
       </div>
     </header>
     <main class="workspace">
@@ -33,18 +35,23 @@
             <button type="button" id="skeletons" aria-pressed="false" disabled>Skeletons</button>
             <button type="button" id="markers" aria-pressed="true" disabled>Markers</button>
           </div>
-          <div id="view-hint" class="view-hint" aria-hidden="true" hidden>Drag to rotate · Scroll to zoom</div>
-          <div class="player-count"><span id="player-count">—</span> visible players</div>
+          <div class="player-count"><span id="player-count">—</span><span class="count-visible"> visible</span> players</div>
           <button type="button" id="fullscreen" class="fullscreen-button" aria-controls="replay" disabled>Fullscreen</button>
         </header>
         <div id="pov-controls" class="pov-controls" hidden>
           <label for="pov-track">Follow player</label>
           <select id="pov-track"></select>
+          <div class="pov-tilt">
+            <label for="pov-tilt">Look down</label>
+            <input id="pov-tilt" type="range" min="0" max="80" value="35" aria-valuetext="35 degrees down" />
+            <output id="pov-tilt-value" for="pov-tilt">35°</output>
+          </div>
           <span id="pov-status" role="status" hidden></span>
         </div>
         <p id="model-message" class="model-message" role="status" hidden></p>
         <div id="viewport" class="viewport" aria-label="3D basketball court">
           <p id="renderer-error" class="renderer-error" hidden></p>
+          <span id="view-hint" class="view-hint" aria-hidden="true" hidden>Drag to rotate · Scroll to zoom</span>
           <span class="court-size" id="court-size">28.65 × 15.24 m</span>
         </div>
         <div class="transport" aria-label="Playback controls">

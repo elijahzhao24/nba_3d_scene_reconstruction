@@ -13,7 +13,7 @@ const elements = Object.fromEntries([
   'load-message', 'markers', 'model-message', 'next', 'open', 'orbit', 'play', 'player-count',
   'players', 'previous',
   'pose-alignment', 'pose-alignment-status', 'pose-pitch', 'pose-yaw', 'pitch-value',
-  'pov', 'pov-controls', 'pov-status', 'pov-track',
+  'pov', 'pov-controls', 'pov-status', 'pov-tilt', 'pov-tilt-value', 'pov-track',
   'renderer-error', 'replay', 'reset-pose', 'scene-file', 'skeletons', 'top-down',
   'view-hint', 'viewport', 'yaw-value',
 ].map((id) => [id, document.getElementById(id)]));
@@ -36,6 +36,7 @@ function start(view) {
   let resolveBallHand = () => null;
   const yaw = elements['pose-yaw'];
   const pitch = elements['pose-pitch'];
+  const povTilt = elements['pov-tilt'];
   const resolveHand = (anchor, time) => resolveBallHand(anchor, time);
   const resolveHoop = (hoop) => view.hoopPosition(hoop);
   const resolveRigHand = (...args) => view.ballHandPosition(...args);
@@ -67,7 +68,8 @@ function start(view) {
     const current = scene.frames[index];
     const inPovMode = cameraMode === 'pov';
     const pov = inPovMode ? playerPov(current, povTrack, pose) : null;
-    view.setPlayerPov(pov);
+    view.setPlayerPov(pov, povTilt.valueAsNumber);
+    povTilt.disabled = !pov;
     const status = elements['pov-status'];
     const unavailable = inPovMode && !pov;
     status.hidden = !unavailable;
@@ -103,15 +105,17 @@ function start(view) {
   function setFrame(newIndex, playbackTime = scene.frames[newIndex].t) {
     index = newIndex;
     const current = scene.frames[index];
+    const lastIndex = scene.frames.length - 1;
     drawPlayers();
     ballEditor.setFrame(current);
     drawBall(playbackTime);
     frame.value = String(index);
+    frame.style.setProperty('--progress', lastIndex ? `${(index / lastIndex) * 100}%` : '0%');
     frame.setAttribute('aria-valuetext', `Frame ${current.frame_idx}`);
     elements['frame-index'].textContent = current.frame_idx;
     elements.elapsed.textContent = current.t.toFixed(2);
     previous.disabled = index === 0;
-    next.disabled = index === scene.frames.length - 1;
+    next.disabled = index === lastIndex;
   }
 
   function pause() {
@@ -182,8 +186,8 @@ function start(view) {
       elements.players.disabled = false;
       if (!playerDisplayChosen) {
         setPlayerDisplay('players');
-        drawPlayers();
       }
+      drawPlayers();
       refreshBallHands();
     }, () => {
       if (scene !== data) return;
@@ -261,6 +265,12 @@ function start(view) {
   elements.pov.addEventListener('click', () => setMode('pov'));
   elements['pov-track'].addEventListener('change', ({ target }) => {
     povTrack = Number(target.value);
+    drawPlayers();
+  });
+  povTilt.addEventListener('input', () => {
+    const angle = povTilt.valueAsNumber;
+    povTilt.setAttribute('aria-valuetext', `${angle} degrees down`);
+    elements['pov-tilt-value'].textContent = `${angle}°`;
     drawPlayers();
   });
   for (const mode of PLAYER_DISPLAYS) {
