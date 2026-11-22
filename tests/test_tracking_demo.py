@@ -6,13 +6,18 @@ import tempfile
 import unittest
 from dataclasses import replace
 from pathlib import Path
+from unittest.mock import patch
 
 import cv2
 import numpy as np
 from test_court_calibration import synthetic_detection
 from test_scene_pipeline import FakeCourtDetector, make_scene
 
-from nba_3d_scene_reconstruction.ingest_video import processNewVideo
+from nba_3d_scene_reconstruction import tracking_demo
+from nba_3d_scene_reconstruction.ingest_video import (
+    processNewVideo,
+    read_saved_video_manifest,
+)
 from nba_3d_scene_reconstruction.tracking.schemas import (
     SamMaskPrediction,
     VideoManifest,
@@ -40,6 +45,15 @@ class FakeTrackingPipeline:
 
 
 class TrackingDemoTest(unittest.TestCase):
+    def _write_source(self, path: Path) -> None:
+        writer = cv2.VideoWriter(
+            str(path), cv2.VideoWriter_fourcc(*"MJPG"), 10.0, (64, 48)
+        )
+        self.assertTrue(writer.isOpened())
+        for value in (20, 40, 60):
+            writer.write(np.full((48, 64, 3), value, dtype=np.uint8))
+        writer.release()
+
     def test_scene_demo_persists_synchronized_raw_records(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -102,16 +116,7 @@ class TrackingDemoTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             source = root / "source.avi"
-            source_writer = cv2.VideoWriter(
-                str(source),
-                cv2.VideoWriter_fourcc(*"MJPG"),
-                10.0,
-                (64, 48),
-            )
-            self.assertTrue(source_writer.isOpened())
-            for value in (20, 40, 60):
-                source_writer.write(np.full((48, 64, 3), value, dtype=np.uint8))
-            source_writer.release()
+            self._write_source(source)
 
             previous_directory = Path.cwd()
             try:
@@ -148,6 +153,59 @@ class TrackingDemoTest(unittest.TestCase):
             capture.release()
             self.assertTrue(success)
             self.assertGreater(int(rendered_frame[20, 20].max()), 20)
+
+    def test_frame_cap_replaces_the_saved_extraction_and_manifest(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source.avi"
+            self._write_source(source)
+            pipeline = FakeTrackingPipeline()
+
+            previous_directory = Path.cwd()
+            try:
+                os.chdir(root)
+                self.assertEqual(processNewVideo(str(source)).frame_count, 3)
+
+                with (
+                    patch.object(tracking_demo, "RoboflowPlayerDetector"),
+                    patch.object(tracking_demo, "Sam2PlayerTracker"),
+                    patch.object(
+                        tracking_demo, "PlayerTrackingPipeline", return_value=pipeline
+                    ),
+                ):
+                    tracking_demo.run_tracking_demo(source, max_frames=2)
+                    self.assertEqual(pipeline.processed_frames, [0, 1])
+
+                    manifest = read_saved_video_manifest(source)
+                    self.assertEqual(manifest.frame_count, 2)
+                    self.assertEqual(pipeline.frames_dir, manifest.frames_dir)
+                    self.assertEqual(
+                        sorted(path.name for path in Path(manifest.frames_dir).iterdir()),
+                        ["000000.jpg", "000001.jpg"],
+                    )
+
+                    with patch.object(tracking_demo, "processNewVideo") as extract:
+                        tracking_demo.run_tracking_demo(
+                            source, skip_frame_extraction=1, max_frames=2
+                        )
+                        with self.assertRaisesRegex(
+                            ValueError, "saved extraction exceeds"
+                        ):
+                            tracking_demo.run_tracking_demo(
+                                source, skip_frame_extraction=1, max_frames=1
+                            )
+                        stale_frame = Path(manifest.frames_dir) / "000002.jpg"
+                        stale_frame.touch()
+                        with self.assertRaisesRegex(
+                            ValueError, "saved frame directory does not match"
+                        ):
+                            tracking_demo.run_tracking_demo(
+                                source, skip_frame_extraction=1, max_frames=2
+                            )
+                        self.assertTrue(stale_frame.exists())
+                        extract.assert_not_called()
+            finally:
+                os.chdir(previous_directory)
 
 
 if __name__ == "__main__":

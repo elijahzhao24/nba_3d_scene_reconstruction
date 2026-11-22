@@ -320,6 +320,23 @@ data contract is stable.
 
 ## How to run + how the pipeline works
 
+### Run the full pipeline with Docker
+
+On Linux with Docker and NVIDIA GPU support, set `ROBOFLOW_API_KEY` in `.env`
+using `.env.example` as the template. From the repo root, run the full clip or
+limit a test run to the first 120 frames.
+
+```bash
+./reconstruct test_video_2.mp4
+./reconstruct test_video_2.mp4 --max-frames 120
+```
+
+The first run builds the image. Open `artifacts/test_video_2/scene.json` in the
+viewer. Rerunning the same clip replaces its scene. Run `./reconstruct --help`
+for tracking options or `./reconstruct --build` to refresh the image.
+
+### Run tracking directly
+
 Run the models with court detection and a fresh homography attempt on every frame:
 
 ```bash

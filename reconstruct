@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  cat <<'HELP'
+Usage: ./reconstruct VIDEO [options]
+       ./reconstruct --build
+
+  --max-frames N         Process the first N frames (default: whole clip)
+  --detector-interval N  Run player detection every N frames (default: 5)
+  --court-interval N     Run court detection every N frames (default: 1)
+  --build                Build or refresh the Docker image
+  -h, --help             Show this help
+
+Writes artifacts/<video-name>/scene.json. Rerunning the same clip replaces its scene.
+HELP
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  '') usage >&2; exit 2 ;;
+esac
+
+repo_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+image="nba-reconstruction:local"
+
+build_image() {
+  docker build --platform linux/amd64 -t "$image" "$repo_dir"
+}
+
+if [[ $# -eq 1 && $1 == --build ]]; then
+  build_image
+  exit 0
+fi
+
+if [[ ! -f "$1" ]]; then
+  printf 'Video file not found: %s\n' "$1" >&2
+  exit 2
+fi
+
+if [[ ! -f "$repo_dir/.env" ]]; then
+  printf 'Create .env from .env.example and set ROBOFLOW_API_KEY.\n' >&2
+  exit 2
+fi
+
+video="$(realpath -- "$1")"
+container_video="/input/$(basename -- "$1")"
+shift
+
+if ! docker image inspect "$image" >/dev/null 2>&1; then
+  build_image
+fi
+
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/nba-reconstruction-docker"
+mkdir -p "$repo_dir/artifacts" "$cache_dir"
+
+exec docker run --rm --init --gpus all \
+  --user "$(id -u):$(id -g)" \
+  --env-file "$repo_dir/.env" \
+  --mount "type=bind,src=$video,dst=$container_video,readonly" \
+  --mount "type=bind,src=$repo_dir/artifacts,dst=/app/artifacts" \
+  --mount "type=bind,src=$cache_dir,dst=/model-cache" \
+  "$image" "$container_video" "$@"

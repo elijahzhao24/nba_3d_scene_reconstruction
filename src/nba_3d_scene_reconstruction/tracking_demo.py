@@ -20,7 +20,7 @@ from .court.smoothing import (
     TrajectorySmoothingConfiguration,
     clean_player_position_frames,
 )
-from .ingest_video import processNewVideo
+from .ingest_video import processNewVideo, read_saved_video_manifest
 from .pipeline import SceneFrame, SceneReconstructionPipeline
 from .tracking.association_engine import PlayerAssociationEngine
 from .tracking.debug import draw_tracking_overlay
@@ -397,8 +397,17 @@ def run_tracking_demo(
     court_interval: int = 1,
 ) -> Path:
     """Ingest one video, run the real models, and render an overlay video."""
-    if not skip_frame_extraction:
-        manifest = processNewVideo(str(video_path))
+    if max_frames is not None and max_frames <= 0:
+        raise ValueError("max_frames must be positive")
+    if skip_frame_extraction:
+        manifest = read_saved_video_manifest(video_path)
+        if max_frames is not None and max_frames < manifest.frame_count:
+            raise ValueError(
+                "saved extraction exceeds max_frames; rerun without "
+                "--skip-frame-extraction to extract fewer frames"
+            )
+    else:
+        manifest = processNewVideo(str(video_path), max_frames=max_frames)
     pipeline = PlayerTrackingPipeline(
         detector=RoboflowPlayerDetector(),
         sam_tracker=Sam2PlayerTracker(),
@@ -422,7 +431,6 @@ def run_tracking_demo(
         manifest,
         pipeline,
         output_path,
-        max_frames=max_frames,
         records_dir=Path(manifest.frames_dir).parent if court_projection else None,
     )
 
@@ -445,7 +453,7 @@ def main() -> None:
     parser.add_argument(
         "--max-frames",
         type=int,
-        help="Process only the first N frames for a quick test",
+        help="Extract and process at most the first N frames",
     )
     parser.add_argument(
         "--court-projection",
@@ -463,8 +471,11 @@ def main() -> None:
     )
     parser.add_argument(
         "--skip-frame-extraction",
+        nargs="?",
         type=int,
-        help="Use whatever is already in artifacts",
+        const=1,
+        default=0,
+        help="Reuse the existing frame extraction and manifest",
     )
     args = parser.parse_args()
 

@@ -1,0 +1,9 @@
+*
+!Dockerfile
+!pyproject.toml
+!uv.lock
+!src/
+!src/**
+!run-pipeline.sh
+**/__pycache__/
+**/*.py[cod]
