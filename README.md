@@ -18,6 +18,30 @@ https://github.com/user-attachments/assets/a4810d3d-3725-42b2-8dcd-53b129697d93
 
 **Visalize to Three.js (WIP)**
 
+## Quickstart
+
+Use an x86-64 machine with an NVIDIA GPU and driver. Install Git and Node.js
+22.12+ in the shell where you run the commands.
+
+- On **Linux**, install [Docker Engine](https://docs.docker.com/engine/install/)
+  and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
+- On **Windows**, use [Docker Desktop with the WSL 2 backend](https://docs.docker.com/desktop/features/wsl/)
+  and enable Ubuntu under **Settings > Resources > WSL Integration**. Run the
+  commands below in Ubuntu. [Windows GPU requirements](https://docs.docker.com/desktop/features/gpu/)
+
+```bash
+git clone https://github.com/elijahzhao24/nba_3d_scene_reconstruction.git
+cd nba_3d_scene_reconstruction
+test -f .env || cp .env.example .env
+nano .env  # Set ROBOFLOW_API_KEY
+./reconstruct test_video_2.mp4 --max-frames 120
+npm --prefix viewer ci
+npm --prefix viewer run dev
+```
+
+The first run builds the Docker image. Omit `--max-frames` for the full clip.
+Open the URL printed by Vite and use **Open scene** to load `artifacts/test_video_2/scene.json`.
+
 ## Summary
 
 The goal of this project is too create a CV pipeline that can ingest a basketball clip, and reconstruct the scene in 3js with human meshes. The 3d scene should accurately recreate the ingestted clip, and allow replay from any angle or perspective.
@@ -299,41 +323,22 @@ the backend.
 }
 ```
 
-For longer clips, this schema can be chunked by time range or by player track.
-It may also move from plain JSON to compressed JSON or a binary format after the
-data contract is stable.
-
 ## Low Level Design
 
-- [Player tracking](/LLDS/TRACKING.md)
-- Player detector interface
-- Tracker and segmentation interface
-- Team assignment pipeline
-- [Court landmark and homography calibration](/LLDS/COURT_HOMOGRAPHY_CALIBRATION.md)
-- [2D pose estimation and local 3D lifting](/LLDS/POSE_ESTIMATION.md)
-- Temporal correction algorithms
-- Skeleton-to-rig retargeting
-- Animation export API
-- Three.js viewer runtime
-- Manual ball annotation editor
+- [Player detection, segmentation, and tracking](LLDS/TRACKING.md)
+- [Court calibration, projection, and trajectory smoothing](LLDS/COURT_HOMOGRAPHY_CALIBRATION.md)
+- [2D pose estimation and local 3D lifting](LLDS/POSE_ESTIMATION.md)
+- [Scene export and Three.js viewer](#replay-a-processed-clip-in-threejs)
+- [Ball keyframe editor](#add-ball-keyframes)
 
 
 ## How to run + how the pipeline works
 
 ### Run the full pipeline with Docker
 
-On Linux with Docker and NVIDIA GPU support, set `ROBOFLOW_API_KEY` in `.env`
-using `.env.example` as the template. From the repo root, run the full clip or
-limit a test run to the first 120 frames.
-
-```bash
-./reconstruct test_video_2.mp4
-./reconstruct test_video_2.mp4 --max-frames 120
-```
-
-The first run builds the image. Open `artifacts/test_video_2/scene.json` in the
-viewer. Rerunning the same clip replaces its scene. Run `./reconstruct --help`
-for tracking options or `./reconstruct --build` to refresh the image.
+Follow the [Quickstart](#quickstart) to run the pipeline. Rerunning the same
+clip replaces its scene. Run `./reconstruct --help` for tracking options or
+`./reconstruct --build` to refresh the image.
 
 ### Run tracking directly
 
