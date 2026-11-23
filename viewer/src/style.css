@@ -60,7 +60,7 @@ button:not(:disabled):hover { background: var(--hover); }
 
 .masthead-inner {
   display: grid;
-  grid-template-columns: minmax(240px, 1fr) minmax(0, 560px) minmax(120px, 1fr);
+  grid-template-columns: minmax(340px, 1fr) minmax(0, 560px) minmax(120px, 1fr);
   align-items: center;
   gap: 16px;
   max-width: var(--layout-width);
@@ -68,12 +68,19 @@ button:not(:disabled):hover { background: var(--hover); }
   padding: 12px var(--layout-gutter);
 }
 
-.wordmark, .source { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.source { justify-self: end; }
+.wordmark {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 10px;
+  min-width: 0;
+}
+
+.source { display: flex; align-items: center; justify-self: end; gap: 10px; min-width: 0; }
 
 .court-mark {
   display: grid;
-  flex: none;
+  grid-row: span 2;
   place-items: center;
   width: 35px;
   height: 24px;
@@ -99,8 +106,11 @@ h1 {
   letter-spacing: 0.055em;
   line-height: 1;
   text-transform: uppercase;
-  white-space: nowrap;
 }
+
+.project-links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.project-links a { color: var(--muted); font-size: 0.8rem; text-underline-offset: 3px; }
+.project-links a:hover, .project-links a:focus-visible { color: var(--accent-bright); }
 
 .clip-name {
   overflow: hidden;
@@ -657,6 +667,8 @@ h1 {
 }
 
 @media (max-width: 365px) {
+  .wordmark h1 { grid-column: 1 / -1; grid-row: 1; }
+  .wordmark .court-mark { grid-row: 2; }
   .views button, .player-views button { padding-inline: 5px; font-size: 0.75rem; }
   .fullscreen-button { width: 34px; gap: 0; padding: 0; font-size: 0; }
   .transport { flex-wrap: wrap; gap: 5px; }
