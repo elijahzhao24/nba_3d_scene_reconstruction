@@ -96,8 +96,8 @@
     },
     {
       "kind": "shot",
-      "start_frame": 178,
-      "end_frame": 206,
+      "start_frame": 176,
+      "end_frame": 218,
       "from": {
         "track_id": 6,
         "hand": "right"
