@@ -28,13 +28,15 @@ https://github.com/user-attachments/assets/a4810d3d-3725-42b2-8dcd-53b129697d93
 ## Quickstart
 
 Use an x86-64 machine with an NVIDIA GPU and driver. Install Git and Node.js
-22.12+ in the shell where you run the commands.
+22.12+ in the shell you’ll use below.
 
-- On **Linux**, install [Docker Engine](https://docs.docker.com/engine/install/)
+- **On Linux**, install [Docker Engine](https://docs.docker.com/engine/install/)
   and the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html).
-- On **Windows**, use [Docker Desktop with the WSL 2 backend](https://docs.docker.com/desktop/features/wsl/)
-  and enable Ubuntu under **Settings > Resources > WSL Integration**. Run the
-  commands below in Ubuntu. [Windows GPU requirements](https://docs.docker.com/desktop/features/gpu/)
+- **On Windows**, use [Docker Desktop with WSL 2](https://docs.docker.com/desktop/features/wsl/).
+  Enable Ubuntu under **Settings > Resources > WSL Integration** and run the
+  commands in Ubuntu. See [Windows GPU requirements](https://docs.docker.com/desktop/features/gpu/).
+
+### 1. Run inference
 
 ```bash
 git clone https://github.com/elijahzhao24/nba_3d_scene_reconstruction.git
@@ -42,14 +44,24 @@ cd nba_3d_scene_reconstruction
 test -f .env || cp .env.example .env
 nano .env  # Set ROBOFLOW_API_KEY
 ./reconstruct test_video_2.mp4 --max-frames 120
+```
+
+The first run builds the Docker image. Omit `--max-frames` for the full clip.
+Rerunning the same clip replaces its scene. See the [pipeline guide](docs/PIPELINE.md)
+for CLI options and diagnostics.
+
+### 2. Open the scene in the viewer
+
+```bash
 npm --prefix viewer ci
 npm --prefix viewer run dev
 ```
 
-The first run builds the Docker image. Omit `--max-frames` for the full clip.
-Open the URL printed by Vite and use **Open scene** to load `artifacts/test_video_2/scene.json`.
+Open the URL printed by Vite in a browser with WebGL 2. Click **Open scene**
+and select `artifacts/test_video_2/scene.json`. See the [viewer guide](docs/VIEWER.md)
+for playback, player POV, and ball editing.
 
-## Requirements/Goals
+## Functional + Non Functional Requirements
 
 
 #### Functional:
@@ -251,8 +263,9 @@ internal source of truth.
 
 ### Three.js Animation Schema
 
-The current viewer uses the scene replay format documented below. This example
-shows the planned animation format for rigged players and the ball.
+The [viewer guide](docs/VIEWER.md#scene-format) describes the current scene replay
+format. This example shows the planned animation format for rigged players and
+the ball.
 
 The viewer should receive a compact animation schema, not the full processing
 schema. It should only include assets, player identities, team colors, root
@@ -329,186 +342,3 @@ the backend.
 - [Player detection, segmentation, and tracking](LLDS/TRACKING.md)
 - [Court calibration, projection, and trajectory smoothing](LLDS/COURT_HOMOGRAPHY_CALIBRATION.md)
 - [2D pose estimation and local 3D lifting](LLDS/POSE_ESTIMATION.md)
-- [Scene export and Three.js viewer](#replay-a-processed-clip-in-threejs)
-- [Ball keyframe editor](#add-ball-keyframes)
-
-
-## How to run + how the pipeline works
-
-### Run the full pipeline with Docker
-
-Follow the [Quickstart](#quickstart) to run the pipeline. Rerunning the same
-clip replaces its scene. Run `./reconstruct --help` for tracking options or
-`./reconstruct --build` to refresh the image.
-
-### Run tracking directly
-
-Run the models with court detection and a fresh homography attempt on every frame:
-
-```bash
-uv run --extra gpu --env-file .env tracking-demo path/to/clip.mp4 \
-  --court-projection --max-frames 60
-```
-
-This writes a synchronized diagnostic video to
-`artifacts/<clip_id>/segment_001/debug/court_debug.webm`. Its left side shows
-the source video with masks, IDs, player footpoints, detected court keypoints,
-and canonical landmarks reprojected through the homography. Its right side
-shows cleaned player dots and IDs on a fixed top-down court. Calibration
-metrics remain available in `calibrations.jsonl` without cluttering the video.
-
-The command also writes five JSONL files under
-`artifacts/<clip_id>/segment_001/`: `observations.jsonl`,
-`court_detections.jsonl`, `calibrations.jsonl`, and
-`player_court_positions_raw.jsonl`, plus
-`player_court_positions_clean.jsonl`. Raw positions remain available for
-diagnosis and smoothing retuning. The environment must configure both the
-player and court models as described in `.env.example`.
-
-Use `--court-interval 5` to reduce hosted court-model calls if per-frame
-calibration is too slow. Failed frames temporarily hold the most recent valid
-transform for up to 15 frames.
-
-SAM 2 stores video frames and tracking history in CPU RAM by default to leave
-GPU memory available for inference. Its model still runs on the GPU.
-CUDA model calls use autocast consistently across prompting and forward/backward
-propagation to keep cached memory compatible with the model weights. CPU
-storage can slow processing and increases host-memory use; it does not change
-the output resolution or playback FPS. Retired tracks are also removed from
-SAM 2's internal state. On a GPU with more memory, a custom runner can pass
-`offload_video_to_cpu=False` and/or `offload_state_to_cpu=False` to
-`Sam2PlayerTracker`.
-
-`PlayerTrackingPipeline.process_frame()` still returns masks; its
-`observations` attribute contains the latest frame's `PlayerObservation`
-records. Pass the video's actual `fps` when constructing the tracker (the
-standalone default is 30). Observations use the largest connected mask
-component and estimate the footpoint at the bottom, with x taken from the
-median of the lowest 5% of the component's height. When a live track has an
-empty or absent mask, its latest detector box supplies a provisional
-bottom-center footpoint. The observation remains marked missing and carries a
-`bbox_footpoint_fallback` flag so downstream cleanup can treat it accordingly.
-Detection confidence is recorded only on frames where that track was matched
-or created by the detector. Mask-derived observations retain
-`sam2_propagation` provenance; checkpoint re-prompts affect subsequent
-propagation. Masks remain in memory and `mask_ref` is unset.
-
-`SceneReconstructionPipeline` joins those observations with per-frame
-calibrations and returns a `SceneFrame`. Court detection runs every frame by
-default. When an interval is configured or a detection fails, it can hold the
-last valid calibration for up to 15 frames.
-Create a new tracking/scene pipeline per continuous segment; starting it
-resets calibration for that segment. Camera-cut detection is not automatic.
-
-The player detector defaults to confidence `0.66` and class-agnostic NMS at
-IoU `0.90`. It accepts the five player/action class names and excludes number,
-ball, referee, and rim classes. New detections must project within 25 cm of the court,
-then accrue repeated detector evidence before entering up to two private SAM
-validation slots. Final output is capped at 10 confirmed players; retained
-candidates can replace a missing or detector-unsupported incumbent, or one
-whose last two detector hits are below `0.72` when the candidate's recent mean
-confidence is at least `0.15` higher. Existing good SAM masks are only re-prompted when their association
-score falls below `0.75`.
-
-Batch rendering finalizes tracking before drawing the video. It persists raw
-detections, masks, and lifecycle events, suppresses sustained duplicate masks,
-and can propagate a late-confirmed player backward for up to 30 frames. Final
-observations use `sam2_backward_recovery` provenance where that recovery
-supplies the mask.
-
-SAM masks receive the reference notebook's detached-component cleanup: keep
-the largest region and regions whose edge is within `0.03` of the image
-diagonal. A propagated mask farther than 75 cm outside the court is treated
-as missing and retires after 0.25 seconds of consecutive court-filter rejections.
-Ordinary mask loss retains the normal missing-track timeout; unavailable court
-calibration interrupts the off-court rejection streak.
-
-`court/projector.py` returns `PlayerCourtPosition` records with `raw_court_xy`
-and `clean_court_xy` in **centimeters**, plus the calibration source frame,
-age, and quality flags.
-Invalid calibration, missing footpoints, projection at infinity, and positions
-outside the court plus a configurable 100 cm margin produce a null position.
-Court landmarks use an aggressive EMA (`alpha=0.25`) before homography fitting.
-After projection, trajectories use robust speed filtering (`jump_sigma=3.5`,
-minimum jump `18.288 cm`, maximum jump run `18`, padding `2`), short-gap
-interpolation, and a 9-frame/order-2 Savitzky-Golay filter. The filter is
-centered, so the minimap is replaced with cleaned positions in a lightweight
-second render pass after inference.
-
-### Replay a processed clip in Three.js
-
-Run tracking with `--court-projection` to generate the segment artifacts. Then
-export the saved results and start the viewer from the repository root:
-
-```bash
-uv run export-scene artifacts/test_video/segment_001 \
-  --source-video test_video.webm \
-  --output artifacts/test_video/scene.json
-npm --prefix viewer ci
-npm --prefix viewer run dev
-```
-
-Open the local URL printed by Vite and use **Open scene** to select
-`artifacts/test_video/scene.json`. The viewer reads that file locally and uses
-its frame times for playback. Use **Top down** to compare the replay with the
-minimap, or **Orbit** to rotate and zoom around the court. The viewer requires
-WebGL 2. Its Node.js requirements are listed in `viewer/package.json`.
-
-`export-scene` uses `video_manifest.json` when present. The older `test_video`
-artifacts need `--source-video` for video metadata. Each exported frame contains
-the visible players with valid cleaned positions, represented as track IDs
-and centered `[x, 0, z]` coordinates in meters. The exporter also copies any
-matching lifted joints from `poses_3d_local.jsonl` with metadata that declares
-their pelvis-relative camera axes and model units.
-
-When poses are available, **Players** animates a bundled, generic skinned player
-model. The viewer maps joint directions to the model's bones and preserves its
-proportions. Each track has its own rig and uses the same steel-gray player model
-with a yellow uniform.
-Use **Skeletons** to inspect the 17-joint poses or **Markers** to compare
-court positions. Missing or implausibly scaled poses keep their floor markers.
-The viewer normalizes pose scale once per lifting sequence and grounds the
-lower foot as an approximation.
-
-The source for the bundled player is `viewer/tools/generate_player.py`.
-Run `python3 viewer/tools/generate_player.py` to regenerate the GLB after edits.
-
-When the saved court calibration supports it, the exporter includes one
-estimated source camera angle for the segment. Open **Pose alignment** to
-adjust yaw or down tilt. This preview uses one orientation through broadcast
-pans and approximates players as grounded, so jump height is unresolved. Older
-scene exports still open and can be aligned manually.
-
-### Watch from a player's POV
-
-With a scene containing player poses open, choose **Player POV**, pick a track
-under **Follow player**, and scrub or play. The camera uses the estimated head
-position and body facing direction with a 95° field of view and a level base
-angle. It follows any authored gaze targets in the scene. The player's hands
-and forearms can come into view. The camera switches to Orbit when the selected
-track has no usable pose and resumes POV when the pose returns.
-
-Choose **Fullscreen** above the court for a larger playback view. The camera
-controls and timeline are still available. Use **Exit fullscreen** or press
-`Esc` to return to editing.
-
-### Add ball keyframes
-
-Open **Ball editor** below the replay timeline. **Hold in hand** attaches the
-ball to the selected player's left or right hand until the next action.
-
-At the release frame, choose **Start dribble**, **Start pass**, or **Start shot**
-and select the releasing hand. Scrub to a later video frame and add the matching
-end marker as the next ball keyframe.
-
-- **End dribble** chooses the receiving hand. The ball bounces once halfway
-  between the two keyframes.
-- **End pass** chooses the receiving hand. The ball travels straight between the
-  two hand positions.
-- **End shot** chooses the hoop. The ball takes a high arc through the rim and
-  finishes below it at the end frame.
-
-After a dribble or pass, the ball follows the receiving hand until the next
-action. Click a list row to seek to its keyframe. **Export ball JSON** saves the
-edits separately from the scene. Open the same scene and use **Import ball JSON**
-to load edits or convert an older ball file to start and end markers.
