@@ -13,7 +13,7 @@ This can be done by using multiple models to solve sub problems, such as player 
 
 **Three.js Visualization**
 
-https://github.com/user-attachments/assets/49113a40-0b72-4ce8-8279-1b6d49b01e5e
+[Screencast from 2026-11-23 07-04-59.webm](https://github.com/user-attachments/assets/83724c05-4552-4648-b7ec-e79b4b08358d)
 
 
 
